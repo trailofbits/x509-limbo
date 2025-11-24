@@ -71,6 +71,7 @@ jobs:
           ISSUES_FILE="${{ steps.fetch.outputs.issues_file }}"
           CREATED_COUNT=0
           SKIPPED_COUNT=0
+          FAILED_COUNT=0
 
           if [ ! -s "$ISSUES_FILE" ]; then
             echo "No issues to process"
@@ -122,7 +123,8 @@ jobs:
                     echo "✓ Created issue for upstream #$UPSTREAM_NUM"
                     echo "$CREATE_OUTPUT"
                   } || {
-                    echo "⚠ Failed to create issue for upstream #$UPSTREAM_NUM"
+                    FAILED_COUNT=$((FAILED_COUNT + 1))
+                    echo "❌ Failed to create issue for upstream #$UPSTREAM_NUM"
                     echo "   gh error:"
                     echo "$CREATE_OUTPUT"
                   }
@@ -140,4 +142,12 @@ jobs:
           echo "Summary:"
           echo "- Created: $CREATED_COUNT new issues"
           echo "- Skipped: $SKIPPED_COUNT existing issues"
+          echo "- Failed: $FAILED_COUNT issues"
           echo "- Total processed: ${{ steps.fetch.outputs.issue_count }}"
+          
+          # Fail the workflow if any issues failed to create
+          if [ "$FAILED_COUNT" -gt 0 ]; then
+            echo ""
+            echo "::error::Failed to create $FAILED_COUNT issue(s). Check logs above for details."
+            exit 1
+          fi
