@@ -7,7 +7,7 @@ This repository has been configured with automated agent workflows for handling 
 ### 1. Sync Upstream Issues (`sync-upstream-issues.yml`)
 - **Runs:** Every 6 hours (scheduled) or manually
 - **Purpose:** Fetches open issues from upstream and creates them in this fork
-- **Labels added:** `upstream`, `needs-triage`
+- **Labels added:** `upstream`, `needs-triage`, `upstream-issue-<N>`
 
 **Manual trigger:**
 ```bash
@@ -17,7 +17,10 @@ gh workflow run sync-upstream-issues.yml
 ### 2. Triage Agent (`agent-triage.md` + `trigger-triage-agent.yml`)
 - **Runs:** When issue is labeled with `needs-triage`
 - **Purpose:** Analyzes issue complexity, type, and determines if auto-fixable
-- **Outputs:** Adds labels like `bug`, `feature`, `complexity:easy`, `agent-fix`
+- **Outputs:**
+  - Adds labels like `bug`, `feature`, `complexity:easy`, `agent-fix`
+  - For upstream-synced \"mega\" issues, can split a single upstream issue into multiple local issues (one per checklist/bullet item)
+  - Rewrites cross-references so local issues refer to other **local** issues, and upstream issues are mentioned only in non-linking form to avoid spamming upstream
 
 ### 3. Fix Agent (`agent-fix-issue.md` + `trigger-fix-agent.yml`)
 - **Runs:** When issue is labeled with `agent-fix` or manually triggered

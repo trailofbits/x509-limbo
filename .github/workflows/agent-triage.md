@@ -26,6 +26,41 @@ Analyze the issue and determine:
 - Identify key requirements and acceptance criteria
 - Note any specific constraints or dependencies
 
+### Step 1a: Handle Upstream-Synced \"Mega\" Issues
+- Detect if the issue was synced from upstream:
+  - It has the `upstream` label, and/or
+  - It has a label of the form `upstream-issue-<N>`.
+- Check if the body clearly contains **multiple distinct tasks**, for example:
+  - Markdown checklists (`- [ ] item`, `- [x] item`)
+  - Numbered lists (`1. ...`, `2. ...`)
+  - Bullet lists where each bullet describes a separate change or feature.
+- If there are multiple independent tasks, **split them into separate local issues**:
+  - For each task item:
+    - Create a new issue in this fork with:
+      - A short, specific title for that task.
+      - A body that:
+        - Quotes only the relevant bullet/checklist item and minimal context.
+        - Mentions the original upstream issue in **non-linking form**, e.g. ``upstream ref: `C2SP/x509-limbo#<N>` `` so we don’t ping upstream.
+      - Labels:
+        - `upstream`
+        - The original `upstream-issue-<N>` label
+        - Any additional type/area labels you deem appropriate.
+  - On the original synced issue:
+    - Optionally repurpose it as a meta/tracking issue (linking the new local issues) or close it as \"split\".
+    - Clearly state which local issues correspond to which original task items.
+
+### Step 1b: Localize Cross-References
+- When an upstream-synced issue body or comments reference other issues:
+  - Avoid using `C2SP/x509-limbo#<N>` or `owner/repo#<N>` in a way that pings upstream.
+  - Prefer:
+    - Local issue references (e.g. `#<local-number>`) when a corresponding local issue exists.
+    - Plain-text or backticked upstream references, e.g. ``upstream `C2SP/x509-limbo#<N>` ``.
+- To map upstream → local issues:
+  - Use `gh issue list --label upstream-issue-<N> --json number` to find all local issues cloned from upstream issue `<N>`.
+  - When rewriting text, replace:
+    - `C2SP/x509-limbo#<N>` with one or more local references (e.g. `#123, #124`) plus a non-linking upstream note if needed.
+    - Bare `#<N>` that clearly refers to upstream with the appropriate local issue number.
+
 ### Step 2: Analyze Complexity
 Assess complexity based on:
 - Number of files likely to change
