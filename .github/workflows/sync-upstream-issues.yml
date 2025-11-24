@@ -13,7 +13,7 @@ jobs:
   sync-issues:
     runs-on: ubuntu-latest
     env:
-      DRY_RUN: true
+      DRY_RUN: false
     steps:
       - uses: actions/checkout@v4
 
@@ -90,8 +90,9 @@ jobs:
               if [ "$DRY_RUN" = "true" ]; then
                 echo "[DRY-RUN] Would create issue for upstream #$UPSTREAM_NUM with labels: upstream,needs-triage,$TRACKING_LABEL"
               else
-                # Create new issue
+                # Create new issue explicitly in this fork
                 gh issue create \
+                  --repo "$GITHUB_REPOSITORY" \
                   --title "Upstream #$UPSTREAM_NUM: $TITLE" \
                   --body "$ISSUE_BODY" \
                   --label upstream \
