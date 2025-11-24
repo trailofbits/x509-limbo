@@ -91,17 +91,20 @@ jobs:
                 echo "[DRY-RUN] Would create issue for upstream #$UPSTREAM_NUM with labels: upstream,needs-triage,$TRACKING_LABEL"
               else
                 # Create new issue explicitly in this fork
-                gh issue create \
+                CREATE_OUTPUT=$(gh issue create \
                   --repo "$GITHUB_REPOSITORY" \
                   --title "Upstream #$UPSTREAM_NUM: $TITLE" \
                   --body "$ISSUE_BODY" \
                   --label upstream \
                   --label needs-triage \
-                  --label "$TRACKING_LABEL" 2>/dev/null && {
+                  --label "$TRACKING_LABEL" 2>&1) && {
                     CREATED_COUNT=$((CREATED_COUNT + 1))
                     echo "✓ Created issue for upstream #$UPSTREAM_NUM"
+                    echo "$CREATE_OUTPUT"
                   } || {
                     echo "⚠ Failed to create issue for upstream #$UPSTREAM_NUM"
+                    echo "   gh error:"
+                    echo "$CREATE_OUTPUT"
                   }
               fi
 
