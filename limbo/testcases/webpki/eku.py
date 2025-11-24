@@ -129,3 +129,131 @@ def root_has_eku(builder: Builder) -> None:
         .peer_certificate(leaf)
         .fails()
     )
+
+
+@testcase
+def ee_clientauth_only(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE
+    ```
+
+    This chain is correctly constructed, but the EE cert contains an
+    Extended Key Usage extension that only contains clientAuth,
+    missing the required serverAuth OID per CABF requirements.
+    Subscriber certificates MUST include id-kp-serverAuth (1.3.6.1.5.5.7.3.1).
+    """
+
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_CLIENT_AUTH]),
+            critical=False,
+        ),
+    )
+
+    builder = builder.server_validation().features([Feature.pedantic_webpki_eku])
+    builder.trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        PeerName(kind="DNS", value="example.com")
+    ).extended_key_usage([KnownEKUs.server_auth]).fails()
+
+
+@testcase
+def ee_precertificate_only(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE
+    ```
+
+    This chain is correctly constructed, but the EE cert contains an
+    Extended Key Usage extension that only contains the precertificate
+    signing OID (1.3.6.1.4.1.11129.2.4.4), which is prohibited in
+    production certificates per CABF requirements.
+    """
+
+    # Create the precertificate OID
+    precertificate_oid = x509.ObjectIdentifier("1.3.6.1.4.1.11129.2.4.4")
+
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        eku=ext(
+            x509.ExtendedKeyUsage([precertificate_oid]),
+            critical=False,
+        ),
+    )
+
+    builder = builder.server_validation().features([Feature.pedantic_webpki_eku])
+    builder.trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        PeerName(kind="DNS", value="example.com")
+    ).extended_key_usage([KnownEKUs.server_auth]).fails()
+
+
+@testcase
+def ee_precertificate_with_serverauth(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE
+    ```
+
+    This chain is correctly constructed, but the EE cert contains an
+    Extended Key Usage extension that includes both serverAuth and
+    the precertificate signing OID (1.3.6.1.4.1.11129.2.4.4).
+    The precertificate OID is prohibited in production certificates
+    per CABF requirements, even when serverAuth is present.
+    """
+
+    # Create the precertificate OID
+    precertificate_oid = x509.ObjectIdentifier("1.3.6.1.4.1.11129.2.4.4")
+
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_SERVER_AUTH, precertificate_oid]),
+            critical=False,
+        ),
+    )
+
+    builder = builder.server_validation().features([Feature.pedantic_webpki_eku])
+    builder.trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        PeerName(kind="DNS", value="example.com")
+    ).extended_key_usage([KnownEKUs.server_auth]).fails()
+
+
+@testcase
+def ee_serverauth_with_additional(builder: Builder) -> None:
+    """
+    Produces the following **valid** chain:
+
+    ```
+    root -> EE
+    ```
+
+    This chain is correctly constructed. The EE cert contains an
+    Extended Key Usage extension that includes serverAuth along with
+    additional valid purposes (clientAuth in this case).
+    This is valid per CABF requirements as long as serverAuth is present
+    and no prohibited OIDs are included.
+    """
+
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_SERVER_AUTH, x509.OID_CLIENT_AUTH]),
+            critical=False,
+        ),
+    )
+
+    builder = builder.server_validation().features([Feature.pedantic_webpki_eku])
+    builder.trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        PeerName(kind="DNS", value="example.com")
+    ).extended_key_usage([KnownEKUs.server_auth]).succeeds()
