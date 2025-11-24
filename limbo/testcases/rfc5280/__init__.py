@@ -652,3 +652,128 @@ def root_and_intermediate_swapped(builder: Builder) -> None:
         .expected_peer_name(PeerName(kind="DNS", value="example.com"))
         .succeeds()
     )
+
+
+@testcase
+def v1_cert_with_critical_extensions(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE (v1 with critical v3 extensions)
+    ```
+
+    The EE certificate is a v1 certificate that contains critical v3 extensions,
+    which violates RFC 5280 Section 4.1.2.1:
+
+    > When extensions are used, as expected in this profile, version MUST be 3 (value is 2).
+
+    This chain should be rejected as invalid.
+    """
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        unchecked_version=x509.Version.v1,
+        extra_unchecked_extensions=[
+            ext(x509.BasicConstraints(ca=False, path_length=None), critical=True),
+            ext(
+                x509.KeyUsage(
+                    digital_signature=True,
+                    content_commitment=False,
+                    key_encipherment=True,
+                    data_encipherment=False,
+                    key_agreement=False,
+                    key_cert_sign=False,
+                    crl_sign=False,
+                    encipher_only=False,
+                    decipher_only=False,
+                ),
+                critical=True,
+            ),
+        ],
+    )
+
+    builder = builder.server_validation()
+    builder = builder.trusted_certs(root).peer_certificate(leaf).fails()
+
+
+@testcase
+def v1_cert_with_non_critical_extensions(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE (v1 with non-critical v3 extensions)
+    ```
+
+    The EE certificate is a v1 certificate that contains non-critical v3 extensions,
+    which violates RFC 5280 Section 4.1.2.1. Even though the extensions are
+    non-critical, their presence in a v1 certificate is still a violation.
+
+    This chain should be rejected as invalid.
+    """
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        unchecked_version=x509.Version.v1,
+        extra_unchecked_extensions=[
+            ext(x509.BasicConstraints(ca=False, path_length=None), critical=False),
+            ext(
+                x509.SubjectAlternativeName([x509.DNSName("example.com")]),
+                critical=False,
+            ),
+        ],
+    )
+
+    builder = builder.server_validation()
+    builder = builder.trusted_certs(root).peer_certificate(leaf).fails()
+
+
+@testcase
+def v1_cert_with_multiple_extensions(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE (v1 with mix of critical and non-critical v3 extensions)
+    ```
+
+    The EE certificate is a v1 certificate that contains multiple v3 extensions
+    with mixed criticality flags. This comprehensively violates RFC 5280
+    Section 4.1.2.1.
+
+    This chain should be rejected as invalid.
+    """
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        unchecked_version=x509.Version.v1,
+        extra_unchecked_extensions=[
+            ext(x509.BasicConstraints(ca=False, path_length=None), critical=True),
+            ext(
+                x509.KeyUsage(
+                    digital_signature=True,
+                    content_commitment=False,
+                    key_encipherment=True,
+                    data_encipherment=False,
+                    key_agreement=False,
+                    key_cert_sign=False,
+                    crl_sign=False,
+                    encipher_only=False,
+                    decipher_only=False,
+                ),
+                critical=True,
+            ),
+            ext(
+                x509.SubjectAlternativeName([x509.DNSName("example.com")]),
+                critical=False,
+            ),
+            ext(
+                x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]),
+                critical=False,
+            ),
+        ],
+    )
+
+    builder = builder.server_validation()
+    builder = builder.trusted_certs(root).peer_certificate(leaf).fails()
