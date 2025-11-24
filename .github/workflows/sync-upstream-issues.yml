@@ -76,16 +76,16 @@ jobs:
 
               # Prepare issue body with upstream reference
               ISSUE_BODY="**Upstream Issue:** $UPSTREAM_REPO#$UPSTREAM_NUM
-**Created:** $CREATED_AT
-**Original Labels:** $LABELS
+              **Created:** $CREATED_AT
+              **Original Labels:** $LABELS
 
----
+              ---
 
-$BODY
+              $BODY
 
----
+              ---
 
-*This issue was automatically synced from the upstream repository.*"
+              *This issue was automatically synced from the upstream repository.*"
 
               if [ "$DRY_RUN" = "true" ]; then
                 echo "[DRY-RUN] Would create issue for upstream #$UPSTREAM_NUM with labels: upstream,needs-triage,$TRACKING_LABEL"
