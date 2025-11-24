@@ -10,6 +10,7 @@ from ipaddress import IPv4Address, IPv6Address
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 
+from limbo.assets import ext
 from limbo.models import PeerName
 from limbo.testcases._core import Builder, testcase
 
@@ -33,10 +34,13 @@ def cabf_cn_ipv4_hex_mismatch(builder: Builder) -> None:
                 x509.NameAttribute(NameOID.COMMON_NAME, "0xC0A80101"),
             ]
         ),
-        san=x509.SubjectAlternativeName(
-            [
-                x509.IPAddress(IPv4Address("192.168.1.1")),
-            ]
+        san=ext(
+            x509.SubjectAlternativeName(
+                [
+                    x509.IPAddress(IPv4Address("192.168.1.1")),
+                ]
+            ),
+            critical=False,
         ),
     )
 
@@ -64,10 +68,13 @@ def cabf_cn_ipv4_leading_zeros_mismatch(builder: Builder) -> None:
                 x509.NameAttribute(NameOID.COMMON_NAME, "192.168.001.001"),
             ]
         ),
-        san=x509.SubjectAlternativeName(
-            [
-                x509.IPAddress(IPv4Address("192.168.1.1")),
-            ]
+        san=ext(
+            x509.SubjectAlternativeName(
+                [
+                    x509.IPAddress(IPv4Address("192.168.1.1")),
+                ]
+            ),
+            critical=False,
         ),
     )
 
@@ -95,10 +102,13 @@ def cabf_cn_ipv6_uppercase_mismatch(builder: Builder) -> None:
                 x509.NameAttribute(NameOID.COMMON_NAME, "2001:DB8::8A2E:370:7334"),
             ]
         ),
-        san=x509.SubjectAlternativeName(
-            [
-                x509.IPAddress(IPv6Address("2001:db8::8a2e:370:7334")),
-            ]
+        san=ext(
+            x509.SubjectAlternativeName(
+                [
+                    x509.IPAddress(IPv6Address("2001:db8::8a2e:370:7334")),
+                ]
+            ),
+            critical=False,
         ),
     )
 
@@ -126,10 +136,13 @@ def cabf_cn_ipv6_uncompressed_mismatch(builder: Builder) -> None:
                 x509.NameAttribute(NameOID.COMMON_NAME, "2001:0db8:0000:0000:0000:0000:0000:0001"),
             ]
         ),
-        san=x509.SubjectAlternativeName(
-            [
-                x509.IPAddress(IPv6Address("2001:db8::1")),
-            ]
+        san=ext(
+            x509.SubjectAlternativeName(
+                [
+                    x509.IPAddress(IPv6Address("2001:db8::1")),
+                ]
+            ),
+            critical=False,
         ),
     )
 
@@ -157,10 +170,13 @@ def cabf_cn_ipv6_non_rfc5952_mismatch(builder: Builder) -> None:
                 x509.NameAttribute(NameOID.COMMON_NAME, "2001:db8:0:0:1:0:0:1"),
             ]
         ),
-        san=x509.SubjectAlternativeName(
-            [
-                x509.IPAddress(IPv6Address("2001:db8::1:0:0:1")),
-            ]
+        san=ext(
+            x509.SubjectAlternativeName(
+                [
+                    x509.IPAddress(IPv6Address("2001:db8::1:0:0:1")),
+                ]
+            ),
+            critical=False,
         ),
     )
 
@@ -190,10 +206,13 @@ def cabf_cn_punycode_vs_utf8_mismatch(builder: Builder) -> None:
                 x509.NameAttribute(NameOID.COMMON_NAME, "xn--nxasmq6b.com"),
             ]
         ),
-        san=x509.SubjectAlternativeName(
-            [
-                x509.DNSName("xn--n3h.com"),  # Different punycode domain
-            ]
+        san=ext(
+            x509.SubjectAlternativeName(
+                [
+                    x509.DNSName("xn--n3h.com"),  # Different punycode domain
+                ]
+            ),
+            critical=False,
         ),
     )
 
@@ -223,10 +242,13 @@ def cabf_cn_utf8_vs_punycode_mismatch(builder: Builder) -> None:
                 x509.NameAttribute(NameOID.COMMON_NAME, "test-測試.com"),
             ]
         ),
-        san=x509.SubjectAlternativeName(
-            [
-                x509.DNSName("xn--test--wg5h0h.com"),  # Correct punycode encoding
-            ]
+        san=ext(
+            x509.SubjectAlternativeName(
+                [
+                    x509.DNSName("xn--test--wg5h0h.com"),  # Correct punycode encoding
+                ]
+            ),
+            critical=False,
         ),
     )
 
@@ -253,11 +275,14 @@ def cabf_cn_not_in_san(builder: Builder) -> None:
                 x509.NameAttribute(NameOID.COMMON_NAME, "notinsan.example.com"),
             ]
         ),
-        san=x509.SubjectAlternativeName(
-            [
-                x509.DNSName("valid.example.com"),
-                x509.DNSName("another.example.com"),
-            ]
+        san=ext(
+            x509.SubjectAlternativeName(
+                [
+                    x509.DNSName("valid.example.com"),
+                    x509.DNSName("another.example.com"),
+                ]
+            ),
+            critical=False,
         ),
     )
 
@@ -284,10 +309,13 @@ def cabf_cn_case_mismatch(builder: Builder) -> None:
                 x509.NameAttribute(NameOID.COMMON_NAME, "Example.COM"),
             ]
         ),
-        san=x509.SubjectAlternativeName(
-            [
-                x509.DNSName("example.com"),
-            ]
+        san=ext(
+            x509.SubjectAlternativeName(
+                [
+                    x509.DNSName("example.com"),
+                ]
+            ),
+            critical=False,
         ),
     )
 
