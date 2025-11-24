@@ -1615,6 +1615,316 @@ def nc_permits_email_domain(builder: Builder) -> None:
 
 
 @testcase
+def nc_permits_email_literal_asterisk_exact_match(builder: Builder) -> None:
+    """
+    Produces the following **valid** graph:
+
+    ```
+    root -> ICA (permit: *@example.com) -> EE (SAN: *@example.com)
+    ```
+
+    Per RFC 5280 4.2.1.10, an asterisk in an email name constraint is a literal
+    character, not a wildcard. The constraint `*@example.com` should permit the
+    exact mailbox `*@example.com`.
+    """
+    # Bypass validation for literal asterisk in constraint
+    name_constraints = x509.NameConstraints(
+        permitted_subtrees=[x509.RFC822Name("fake@example.com")], excluded_subtrees=None
+    )
+    name_constraints._permitted_subtrees = [
+        x509.RFC822Name._init_without_validation("*@example.com")
+    ]
+
+    root = builder.root_ca()
+    ica = builder.intermediate_ca(
+        root,
+        name_constraints=ext(name_constraints, critical=True),
+        san=None,
+    )
+    leaf = builder.leaf_cert(
+        ica,
+        san=ext(
+            x509.SubjectAlternativeName(
+                [x509.RFC822Name._init_without_validation("*@example.com")]
+            ),
+            critical=False,
+        ),
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_CLIENT_AUTH]),
+            critical=False,
+        ),
+    )
+
+    builder = (
+        builder.client_validation()
+        .extended_key_usage([KnownEKUs.client_auth])
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .expected_peer_names(PeerName(kind="RFC822", value="*@example.com"))
+        .succeeds()
+    )
+
+
+@testcase
+def nc_permits_email_literal_asterisk_rejects_user(builder: Builder) -> None:
+    """
+    Produces the following **invalid** graph:
+
+    ```
+    root -> ICA (permit: *@example.com) -> EE (SAN: user@example.com)
+    ```
+
+    Per RFC 5280 4.2.1.10, an asterisk in an email name constraint is a literal
+    character, not a wildcard. The constraint `*@example.com` should NOT match
+    `user@example.com` because the asterisk must match literally, not as a
+    pattern.
+    """
+    # Bypass validation for literal asterisk in constraint
+    name_constraints = x509.NameConstraints(
+        permitted_subtrees=[x509.RFC822Name("fake@example.com")], excluded_subtrees=None
+    )
+    name_constraints._permitted_subtrees = [
+        x509.RFC822Name._init_without_validation("*@example.com")
+    ]
+
+    root = builder.root_ca()
+    ica = builder.intermediate_ca(
+        root,
+        name_constraints=ext(name_constraints, critical=True),
+        san=None,
+    )
+    leaf = builder.leaf_cert(
+        ica,
+        san=ext(
+            x509.SubjectAlternativeName([x509.RFC822Name("user@example.com")]),
+            critical=False,
+        ),
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_CLIENT_AUTH]),
+            critical=False,
+        ),
+    )
+
+    builder = (
+        builder.client_validation()
+        .extended_key_usage([KnownEKUs.client_auth])
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .expected_peer_names(PeerName(kind="RFC822", value="user@example.com"))
+        .fails()
+    )
+
+
+@testcase
+def nc_permits_email_literal_asterisk_rejects_subdomain(builder: Builder) -> None:
+    """
+    Produces the following **invalid** graph:
+
+    ```
+    root -> ICA (permit: *@example.com) -> EE (SAN: *@subdomain.example.com)
+    ```
+
+    Per RFC 5280 4.2.1.10, the constraint `*@example.com` should NOT match
+    `*@subdomain.example.com` because they are different domains, and the
+    asterisk is a literal character in both cases.
+    """
+    # Bypass validation for literal asterisk in constraint
+    name_constraints = x509.NameConstraints(
+        permitted_subtrees=[x509.RFC822Name("fake@example.com")], excluded_subtrees=None
+    )
+    name_constraints._permitted_subtrees = [
+        x509.RFC822Name._init_without_validation("*@example.com")
+    ]
+
+    root = builder.root_ca()
+    ica = builder.intermediate_ca(
+        root,
+        name_constraints=ext(name_constraints, critical=True),
+        san=None,
+    )
+    leaf = builder.leaf_cert(
+        ica,
+        san=ext(
+            x509.SubjectAlternativeName(
+                [x509.RFC822Name._init_without_validation("*@subdomain.example.com")]
+            ),
+            critical=False,
+        ),
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_CLIENT_AUTH]),
+            critical=False,
+        ),
+    )
+
+    builder = (
+        builder.client_validation()
+        .extended_key_usage([KnownEKUs.client_auth])
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .expected_peer_names(PeerName(kind="RFC822", value="*@subdomain.example.com"))
+        .fails()
+    )
+
+
+@testcase
+def nc_permits_email_literal_double_asterisk(builder: Builder) -> None:
+    """
+    Produces the following **valid** graph:
+
+    ```
+    root -> ICA (permit: **@example.com) -> EE (SAN: **@example.com)
+    ```
+
+    Per RFC 5280 4.2.1.10, any characters in an email name constraint are treated
+    literally. The constraint `**@example.com` should permit only the exact
+    mailbox `**@example.com`.
+    """
+    # Bypass validation for literal asterisks in constraint
+    name_constraints = x509.NameConstraints(
+        permitted_subtrees=[x509.RFC822Name("fake@example.com")], excluded_subtrees=None
+    )
+    name_constraints._permitted_subtrees = [
+        x509.RFC822Name._init_without_validation("**@example.com")
+    ]
+
+    root = builder.root_ca()
+    ica = builder.intermediate_ca(
+        root,
+        name_constraints=ext(name_constraints, critical=True),
+        san=None,
+    )
+    leaf = builder.leaf_cert(
+        ica,
+        san=ext(
+            x509.SubjectAlternativeName(
+                [x509.RFC822Name._init_without_validation("**@example.com")]
+            ),
+            critical=False,
+        ),
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_CLIENT_AUTH]),
+            critical=False,
+        ),
+    )
+
+    builder = (
+        builder.client_validation()
+        .extended_key_usage([KnownEKUs.client_auth])
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .expected_peer_names(PeerName(kind="RFC822", value="**@example.com"))
+        .succeeds()
+    )
+
+
+@testcase
+def nc_permits_email_literal_double_asterisk_rejects_single(builder: Builder) -> None:
+    """
+    Produces the following **invalid** graph:
+
+    ```
+    root -> ICA (permit: **@example.com) -> EE (SAN: *@example.com)
+    ```
+
+    Per RFC 5280 4.2.1.10, the constraint `**@example.com` should NOT match
+    `*@example.com` because the asterisks are literal characters, not wildcards.
+    """
+    # Bypass validation for literal asterisks in constraint
+    name_constraints = x509.NameConstraints(
+        permitted_subtrees=[x509.RFC822Name("fake@example.com")], excluded_subtrees=None
+    )
+    name_constraints._permitted_subtrees = [
+        x509.RFC822Name._init_without_validation("**@example.com")
+    ]
+
+    root = builder.root_ca()
+    ica = builder.intermediate_ca(
+        root,
+        name_constraints=ext(name_constraints, critical=True),
+        san=None,
+    )
+    leaf = builder.leaf_cert(
+        ica,
+        san=ext(
+            x509.SubjectAlternativeName(
+                [x509.RFC822Name._init_without_validation("*@example.com")]
+            ),
+            critical=False,
+        ),
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_CLIENT_AUTH]),
+            critical=False,
+        ),
+    )
+
+    builder = (
+        builder.client_validation()
+        .extended_key_usage([KnownEKUs.client_auth])
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .expected_peer_names(PeerName(kind="RFC822", value="*@example.com"))
+        .fails()
+    )
+
+
+@testcase
+def nc_permits_email_literal_mid_asterisk(builder: Builder) -> None:
+    """
+    Produces the following **valid** graph:
+
+    ```
+    root -> ICA (permit: user*@example.com) -> EE (SAN: user*@example.com)
+    ```
+
+    Per RFC 5280 4.2.1.10, all characters in an email name constraint are treated
+    literally, including asterisks at any position. The constraint
+    `user*@example.com` should permit only the exact mailbox `user*@example.com`.
+    """
+    # Bypass validation for literal asterisk in constraint
+    name_constraints = x509.NameConstraints(
+        permitted_subtrees=[x509.RFC822Name("fake@example.com")], excluded_subtrees=None
+    )
+    name_constraints._permitted_subtrees = [
+        x509.RFC822Name._init_without_validation("user*@example.com")
+    ]
+
+    root = builder.root_ca()
+    ica = builder.intermediate_ca(
+        root,
+        name_constraints=ext(name_constraints, critical=True),
+        san=None,
+    )
+    leaf = builder.leaf_cert(
+        ica,
+        san=ext(
+            x509.SubjectAlternativeName(
+                [x509.RFC822Name._init_without_validation("user*@example.com")]
+            ),
+            critical=False,
+        ),
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_CLIENT_AUTH]),
+            critical=False,
+        ),
+    )
+
+    builder = (
+        builder.client_validation()
+        .extended_key_usage([KnownEKUs.client_auth])
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .expected_peer_names(PeerName(kind="RFC822", value="user*@example.com"))
+        .succeeds()
+    )
+
+
+@testcase
 def nc_forbids_othername(builder: Builder) -> None:
     """
     Produces the following **invalid** graph:
