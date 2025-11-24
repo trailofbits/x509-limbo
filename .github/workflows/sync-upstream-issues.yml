@@ -1,0 +1,119 @@
+name: Sync Upstream Issues
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Run every 6 hours
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  sync-issues:
+    runs-on: ubuntu-latest
+    env:
+      DRY_RUN: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch upstream issues
+        id: fetch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_REPO: C2SP/x509-limbo
+        run: |
+          echo "Fetching open issues from upstream..."
+
+          # Create temp file for issues
+          TEMP_FILE=$(mktemp)
+
+          # Fetch open issues from upstream (max 100)
+          gh api "repos/$UPSTREAM_REPO/issues" \
+            --paginate \
+            -X GET \
+            -f state=open \
+            -f per_page=100 \
+            --jq '.[] | select(.pull_request == null) | {number, title, body, labels: [.labels[].name], created_at}' \
+            > "$TEMP_FILE"
+
+          echo "issues_file=$TEMP_FILE" >> $GITHUB_OUTPUT
+
+          ISSUE_COUNT=$(wc -l < "$TEMP_FILE")
+          echo "Found $ISSUE_COUNT open issues"
+          echo "issue_count=$ISSUE_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Create or update issues in fork
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_REPO: C2SP/x509-limbo
+        run: |
+          ISSUES_FILE="${{ steps.fetch.outputs.issues_file }}"
+          CREATED_COUNT=0
+          SKIPPED_COUNT=0
+
+          if [ ! -s "$ISSUES_FILE" ]; then
+            echo "No issues to process"
+            exit 0
+          fi
+
+          while IFS= read -r issue; do
+            TITLE=$(echo "$issue" | jq -r '.title')
+            BODY=$(echo "$issue" | jq -r '.body // "No description provided"')
+            UPSTREAM_NUM=$(echo "$issue" | jq -r '.number')
+            LABELS=$(echo "$issue" | jq -r '.labels | join(",")')
+            CREATED_AT=$(echo "$issue" | jq -r '.created_at')
+            TRACKING_LABEL="upstream-issue-$UPSTREAM_NUM"
+
+            # Check if issue already exists in fork using tracking label
+            EXISTING=$(gh issue list \
+              --label "$TRACKING_LABEL" \
+              --json number \
+              --jq '.[0].number // empty')
+
+            if [ -z "$EXISTING" ]; then
+              echo "Creating issue for upstream #$UPSTREAM_NUM..."
+
+              # Prepare issue body with upstream reference
+              ISSUE_BODY="**Upstream Issue:** $UPSTREAM_REPO#$UPSTREAM_NUM
+**Created:** $CREATED_AT
+**Original Labels:** $LABELS
+
+---
+
+$BODY
+
+---
+
+*This issue was automatically synced from the upstream repository.*"
+
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "[DRY-RUN] Would create issue for upstream #$UPSTREAM_NUM with labels: upstream,needs-triage,$TRACKING_LABEL"
+              else
+                # Create new issue
+                gh issue create \
+                  --title "Upstream #$UPSTREAM_NUM: $TITLE" \
+                  --body "$ISSUE_BODY" \
+                  --label upstream \
+                  --label needs-triage \
+                  --label "$TRACKING_LABEL" 2>/dev/null && {
+                    CREATED_COUNT=$((CREATED_COUNT + 1))
+                    echo "✓ Created issue for upstream #$UPSTREAM_NUM"
+                  } || {
+                    echo "⚠ Failed to create issue for upstream #$UPSTREAM_NUM"
+                  }
+              fi
+
+              # Rate limiting - be nice to GitHub API
+              sleep 2
+            else
+              SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+              echo "⊘ Issue already exists for upstream #$UPSTREAM_NUM (Fork #$EXISTING)"
+            fi
+          done < <(jq -c '.' "$ISSUES_FILE")
+
+          echo ""
+          echo "Summary:"
+          echo "- Created: $CREATED_COUNT new issues"
+          echo "- Skipped: $SKIPPED_COUNT existing issues"
+          echo "- Total processed: ${{ steps.fetch.outputs.issue_count }}"

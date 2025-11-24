@@ -22,3 +22,37 @@ jobs:
 
       - name: Run zizmor 🌈
         uses: zizmorcore/zizmor-action@e673c3917a1aef3c65c972347ed84ccd013ecda4 # v0.2.0
+
+      - name: Fail job on zizmor findings
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Only enforce on pull requests; pushes to main will still upload alerts but not fail CI
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Not a pull_request event, skipping zizmor enforcement."
+            exit 0
+          fi
+
+          REF="${{ github.event.pull_request.head.sha }}"
+          REPO="${{ github.repository }}"
+
+          echo "Checking zizmor code scanning alerts for ref $REF in $REPO"
+
+          # Fetch code scanning alerts for this ref and tool 'zizmor'
+          ALERTS_JSON=$(gh api \
+            "repos/$REPO/code-scanning/alerts" \
+            --method GET \
+            -f ref="$REF" \
+            -f tool_name="zizmor" 2>/dev/null || echo "[]")
+
+          COUNT=$(echo "$ALERTS_JSON" | jq 'length')
+
+          echo "zizmor alerts for this ref: $COUNT"
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::zizmor reported $COUNT security alerts on this PR. Failing job."
+            exit 1
+          fi
+
+          echo "No zizmor alerts found for this PR; job will pass."

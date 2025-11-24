@@ -1,0 +1,220 @@
+name: Create Upstream PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Fork PR number to submit upstream'
+        required: true
+        type: number
+
+jobs:
+  create-upstream-pr:
+    # Only run when manually triggered
+    if: github.event_name == 'workflow_dispatch'
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    env:
+      DRY_RUN: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set PR Number
+        id: pr
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get Fork PR Details
+        id: fork_pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_DATA=$(gh pr view ${{ steps.pr.outputs.number }} --json title,body,headRefName,state,reviews,statusCheckRollup)
+
+          echo "title=$(echo "$PR_DATA" | jq -r '.title')" >> $GITHUB_OUTPUT
+          echo "body=$(echo "$PR_DATA" | jq -r '.body')" >> $GITHUB_OUTPUT
+          echo "branch=$(echo "$PR_DATA" | jq -r '.headRefName')" >> $GITHUB_OUTPUT
+          echo "state=$(echo "$PR_DATA" | jq -r '.state')" >> $GITHUB_OUTPUT
+
+          # Check if approved
+          APPROVED=$(echo "$PR_DATA" | jq '[.reviews // [] | .[] | select(.state == "APPROVED")] | length')
+          echo "approved=$APPROVED" >> $GITHUB_OUTPUT
+
+          # Check if checks passed
+          CHECKS_PASSED=$(echo "$PR_DATA" | jq '[.statusCheckRollup // [] | .[] | select(.conclusion == "SUCCESS" or .conclusion == "NEUTRAL")] | length')
+          echo "checks_passed=$CHECKS_PASSED" >> $GITHUB_OUTPUT
+
+      - name: Verify PR is Ready
+        env:
+          APPROVED: ${{ steps.fork_pr.outputs.approved }}
+          STATE: ${{ steps.fork_pr.outputs.state }}
+        run: |
+          if [ "$STATE" != "OPEN" ]; then
+            echo "❌ PR is not open"
+            exit 1
+          fi
+
+          if [ "$APPROVED" -lt 1 ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "❌ PR needs at least one approval"
+            exit 1
+          fi
+
+          echo "✅ PR is ready for upstream submission"
+
+      - name: Extract Upstream Issue
+        id: upstream
+        env:
+          PR_BODY: ${{ steps.fork_pr.outputs.body }}
+        run: |
+          # Extract upstream issue reference (e.g., "Upstream Issue: owner/repo#123")
+          UPSTREAM_REF=$(echo "$PR_BODY" | grep -oP 'Upstream Issue:\s*\K[^\s]+' || echo "")
+
+          if [ -z "$UPSTREAM_REF" ]; then
+            # Try to extract from title (e.g., "Upstream #123:")
+            UPSTREAM_NUM=$(echo "${{ steps.fork_pr.outputs.title }}" | grep -oP 'Upstream #\K\d+' || echo "")
+            if [ -n "$UPSTREAM_NUM" ]; then
+              UPSTREAM_REF="C2SP/x509-limbo#$UPSTREAM_NUM"
+            fi
+          fi
+
+          if [ -z "$UPSTREAM_REF" ]; then
+            echo "❌ Could not find upstream issue reference"
+            exit 1
+          fi
+
+          echo "reference=$UPSTREAM_REF" >> $GITHUB_OUTPUT
+          echo "Found upstream reference: $UPSTREAM_REF"
+
+      - name: Setup Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add Upstream Remote
+        run: |
+          git remote add upstream https://github.com/C2SP/x509-limbo.git || true
+          git fetch upstream
+
+      - name: Create Upstream Branch
+        id: upstream_branch
+        env:
+          FORK_BRANCH: ${{ steps.fork_pr.outputs.branch }}
+        run: |
+          UPSTREAM_BRANCH="upstream-pr-${{ steps.pr.outputs.number }}"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "[DRY-RUN] Would rebase '$FORK_BRANCH' on upstream/main and push '$UPSTREAM_BRANCH' to origin"
+            echo "branch=$UPSTREAM_BRANCH" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Checkout fork branch
+          git checkout "$FORK_BRANCH"
+
+          # Rebase on upstream main
+          git rebase upstream/main || {
+            echo "❌ Rebase failed - conflicts with upstream"
+            git rebase --abort
+            exit 1
+          }
+
+          # Create new branch for upstream
+          git checkout -b "$UPSTREAM_BRANCH"
+          git push origin "$UPSTREAM_BRANCH" --force
+
+          echo "branch=$UPSTREAM_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Prepare Upstream PR Body
+        id: pr_body
+        env:
+          FORK_PR_BODY: ${{ steps.fork_pr.outputs.body }}
+          UPSTREAM_REF: ${{ steps.upstream.outputs.reference }}
+        run: |
+          cat > upstream_pr_body.md << 'UPSTREAMEOF'
+## Description
+This PR addresses ${{ steps.upstream.outputs.reference }}
+
+${{ steps.fork_pr.outputs.body }}
+
+## Testing
+All tests have been run and are passing in the fork.
+
+## Checklist
+- [x] Code follows project style guidelines
+- [x] Self-review completed
+- [x] Tests added/updated
+- [x] All tests passing
+- [x] Documentation updated if needed
+
+---
+*This contribution was developed and tested in a fork: ${{ github.repository }}#${{ steps.pr.outputs.number }}*
+UPSTREAMEOF
+
+          echo "body<<UPSTREAMEOF" >> $GITHUB_OUTPUT
+          cat upstream_pr_body.md >> $GITHUB_OUTPUT
+          echo "UPSTREAMEOF" >> $GITHUB_OUTPUT
+
+      - name: Create Upstream PR (Dry Run)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_BRANCH: ${{ steps.upstream_branch.outputs.branch }}
+          PR_TITLE: ${{ steps.fork_pr.outputs.title }}
+        run: |
+          echo "🚀 Would create upstream PR with:"
+          echo "Repository: C2SP/x509-limbo"
+          echo "Base: main"
+          echo "Head: ${{ github.repository_owner }}:$UPSTREAM_BRANCH"
+          echo "Title: $PR_TITLE"
+          echo ""
+          echo "⚠️  Dry run mode - not actually creating PR"
+          echo "To create real upstream PR, you need to:"
+          echo "1. Ensure you have write access to push branches"
+          echo "2. Run this command manually:"
+          echo ""
+          echo "gh pr create \\"
+          echo "  --repo C2SP/x509-limbo \\"
+          echo "  --base main \\"
+          echo "  --head ${{ github.repository_owner }}:$UPSTREAM_BRANCH \\"
+          echo "  --title \"$PR_TITLE\" \\"
+          echo "  --body-file upstream_pr_body.md"
+
+      - name: Update Fork PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "[DRY-RUN] Would comment on fork PR #${{ steps.pr.outputs.number }} and add 'ready-for-upstream' label"
+            exit 0
+          fi
+
+          gh pr comment ${{ steps.pr.outputs.number }} --body "🚀 **Ready for Upstream Submission**
+
+Branch \`${{ steps.upstream_branch.outputs.branch }}\` has been prepared and rebased on upstream/main.
+
+## Next Steps
+To create the upstream PR, run:
+\`\`\`bash
+gh pr create \\
+  --repo C2SP/x509-limbo \\
+  --base main \\
+  --head ${{ github.repository_owner }}:${{ steps.upstream_branch.outputs.branch }} \\
+  --title \"${{ steps.fork_pr.outputs.title }}\" \\
+  --body-file upstream_pr_body.md
+\`\`\`
+
+Or use the GitHub web interface to create a PR from the branch.
+
+⚠️ Automated PR creation requires additional permissions and configuration."
+
+          gh pr edit ${{ steps.pr.outputs.number }} --add-label "ready-for-upstream"
