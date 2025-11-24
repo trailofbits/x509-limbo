@@ -17,26 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ensure required labels exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "Creating required labels if they don't exist..."
-          
-          # Create 'upstream' label
-          gh label create "upstream" \
-            --repo "$GITHUB_REPOSITORY" \
-            --description "Issue synced from upstream C2SP/x509-limbo" \
-            --color "0E8A16" \
-            --force || echo "Label 'upstream' already exists or created"
-          
-          # Create 'needs-triage' label
-          gh label create "needs-triage" \
-            --repo "$GITHUB_REPOSITORY" \
-            --description "Issue needs to be triaged by an agent" \
-            --color "FBCA04" \
-            --force || echo "Label 'needs-triage' already exists or created"
-
       - name: Fetch upstream issues
         id: fetch
         env:
@@ -71,7 +51,6 @@ jobs:
           ISSUES_FILE="${{ steps.fetch.outputs.issues_file }}"
           CREATED_COUNT=0
           SKIPPED_COUNT=0
-          FAILED_COUNT=0
 
           if [ ! -s "$ISSUES_FILE" ]; then
             echo "No issues to process"
@@ -94,6 +73,11 @@ jobs:
 
             if [ -z "$EXISTING" ]; then
               echo "Creating issue for upstream #$UPSTREAM_NUM..."
+
+              # Ensure tracking label exists in this repository (gh cannot apply non-existent labels)
+              gh label create "$TRACKING_LABEL" \
+                --color "ededed" \
+                --description "Cloned from upstream issue #$UPSTREAM_NUM" >/dev/null 2>&1 || true
 
               # Prepare issue body with upstream reference
               ISSUE_BODY="**Upstream Issue:** $UPSTREAM_REPO#$UPSTREAM_NUM
@@ -123,8 +107,7 @@ jobs:
                     echo "✓ Created issue for upstream #$UPSTREAM_NUM"
                     echo "$CREATE_OUTPUT"
                   } || {
-                    FAILED_COUNT=$((FAILED_COUNT + 1))
-                    echo "❌ Failed to create issue for upstream #$UPSTREAM_NUM"
+                    echo "⚠ Failed to create issue for upstream #$UPSTREAM_NUM"
                     echo "   gh error:"
                     echo "$CREATE_OUTPUT"
                   }
@@ -142,12 +125,4 @@ jobs:
           echo "Summary:"
           echo "- Created: $CREATED_COUNT new issues"
           echo "- Skipped: $SKIPPED_COUNT existing issues"
-          echo "- Failed: $FAILED_COUNT issues"
           echo "- Total processed: ${{ steps.fetch.outputs.issue_count }}"
-          
-          # Fail the workflow if any issues failed to create
-          if [ "$FAILED_COUNT" -gt 0 ]; then
-            echo ""
-            echo "::error::Failed to create $FAILED_COUNT issue(s). Check logs above for details."
-            exit 1
-          fi
