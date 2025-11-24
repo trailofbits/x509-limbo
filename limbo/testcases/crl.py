@@ -246,3 +246,72 @@ def crlnumber_critical(builder: Builder) -> None:
         .validation_time(leaf.cert.not_valid_before_utc + timedelta(seconds=2))
         .fails()
     )
+
+
+@testcase
+def revoked_certificates_absent(builder: Builder) -> None:
+    """
+    Tests that a CRL with an absent revokedCertificates field is accepted.
+
+    Per RFC 5280 Section 5.1.2.6, the revokedCertificates field is OPTIONAL
+    and may be absent when no certificates have been revoked. This tests
+    that implementations correctly handle the absence of this field.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca()
+
+    leaf = builder.leaf_cert(
+        parent=root,
+        subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "crl-absent-test.example.com")]),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("crl-absent-test.example.com")]),
+            critical=False,
+        ),
+    )
+
+    # CRL with no revoked certificates - revokedCertificates field will be absent
+    crl = builder.crl(signer=root, revoked=[])
+
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="crl-absent-test.example.com")
+    ).crls(crl).validation_time(validation_time).succeeds()
+
+
+@testcase
+def certificate_not_on_empty_crl(builder: Builder) -> None:
+    """
+    Tests certificate validation against a CRL with no revoked certificates.
+
+    Verifies that a valid certificate passes validation when checked against
+    a CRL that contains no revocations. Per RFC 5280, this is a valid CRL
+    format and the certificate should be accepted since it does not appear
+    in any revocation list.
+
+    This is distinct from certificate_not_on_crl which uses a populated CRL.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca()
+
+    leaf = builder.leaf_cert(
+        parent=root,
+        subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "empty-crl-test.example.com")]),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("empty-crl-test.example.com")]),
+            critical=False,
+        ),
+    )
+
+    # Empty CRL - no revoked certificates
+    crl = builder.crl(signer=root, revoked=[])
+
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="empty-crl-test.example.com")
+    ).crls(crl).validation_time(validation_time).succeeds()
