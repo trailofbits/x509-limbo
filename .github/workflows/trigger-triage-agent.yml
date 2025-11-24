@@ -1,0 +1,66 @@
+name: Trigger Triage Agent
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  triage:
+    if: github.event.label.name == 'needs-triage'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    env:
+      DRY_RUN: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Triage Agent
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          echo "🤖 Triaging issue #$ISSUE_NUMBER..."
+
+          # For now, this is a placeholder for the actual agent logic
+          # When gh-aw is properly configured, this will run the agent
+
+          # Basic triage logic as fallback
+          COMPLEXITY="easy"
+          TYPE="bug"
+
+          # Detect type from title/body
+          if echo "$ISSUE_TITLE" | grep -iq "feat\|feature"; then
+            TYPE="feature"
+          elif echo "$ISSUE_TITLE" | grep -iq "doc\|documentation"; then
+            TYPE="documentation"
+          elif echo "$ISSUE_TITLE" | grep -iq "perf\|performance"; then
+            TYPE="performance"
+          fi
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "[DRY-RUN] Would label issue #$ISSUE_NUMBER with: $TYPE, complexity:$COMPLEXITY and remove needs-triage"
+            echo "[DRY-RUN] Would add automated triage comment to issue #$ISSUE_NUMBER"
+          else
+            # Add labels
+            gh issue edit "$ISSUE_NUMBER" \
+              --add-label "$TYPE" \
+              --add-label "complexity:$COMPLEXITY" \
+              --remove-label "needs-triage"
+
+            # Add analysis comment
+            gh issue comment "$ISSUE_NUMBER" --body "## 🤖 Automated Triage
+
+**Type:** $TYPE
+**Complexity:** $COMPLEXITY
+
+This issue has been automatically triaged. A human reviewer will assess if it's suitable for automated fixing.
+
+*To enable full AI-powered triage, configure the agentic workflow with gh-aw.*"
+          fi
+
+          echo "✓ Triage complete (dry-run=$DRY_RUN)"
