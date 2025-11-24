@@ -17,6 +17,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Ensure required labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Creating required labels if they don't exist..."
+          
+          # Create 'upstream' label
+          gh label create "upstream" \
+            --repo "$GITHUB_REPOSITORY" \
+            --description "Issue synced from upstream C2SP/x509-limbo" \
+            --color "0E8A16" \
+            --force || echo "Label 'upstream' already exists or created"
+          
+          # Create 'needs-triage' label
+          gh label create "needs-triage" \
+            --repo "$GITHUB_REPOSITORY" \
+            --description "Issue needs to be triaged by an agent" \
+            --color "FBCA04" \
+            --force || echo "Label 'needs-triage' already exists or created"
+
       - name: Fetch upstream issues
         id: fetch
         env:
