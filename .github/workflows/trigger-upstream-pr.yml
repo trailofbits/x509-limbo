@@ -7,16 +7,11 @@ on:
         description: 'Fork PR number to submit upstream'
         required: true
         type: number
-  pull_request_review:
-    types: [submitted]
 
 jobs:
   create-upstream-pr:
-    # Only run if PR is approved or manually triggered
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.review.state == 'approved' &&
-       contains(github.event.pull_request.labels.*.name, 'ready-for-upstream'))
+    # Only run when manually triggered
+    if: github.event_name == 'workflow_dispatch'
 
     runs-on: ubuntu-latest
     permissions:
