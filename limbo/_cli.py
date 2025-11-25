@@ -130,6 +130,36 @@ def main() -> None:
     )
     extract.set_defaults(func=_extract)
 
+    # `limbo export-pkcs7`
+    export_pkcs7 = subparsers.add_parser(
+        "export-pkcs7", help="Export testcases as PKCS #7 certificate chains"
+    )
+    export_pkcs7.add_argument(
+        "--limbo",
+        type=Path,
+        default=Path("limbo.json"),
+        metavar="FILE",
+        help="The limbo testcase suite to load from",
+    )
+    export_pkcs7.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("pkcs7"),
+        metavar="DIR",
+        help="The directory to write PKCS #7 files to (default: pkcs7/)",
+    )
+    export_pkcs7.add_argument(
+        "--include",
+        type=str,
+        help="Include only testcases matching the given fnmatch(2)-style pattern",
+    )
+    export_pkcs7.add_argument(
+        "--exclude",
+        type=str,
+        help="Exclude any testcases matching the given fnmatch(2)-style pattern",
+    )
+    export_pkcs7.set_defaults(func=_export_pkcs7)
+
     args = parser.parse_args()
     args.func(args)
 
@@ -294,3 +324,79 @@ def _extract(args: argparse.Namespace) -> None:
         print(testcase.model_dump_json(indent=2), file=sys.stdout)
     else:
         Path(output).write_text(testcase.model_dump_json(indent=2))
+
+
+def _export_pkcs7(args: argparse.Namespace) -> None:
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.serialization import pkcs7
+
+    limbo = Limbo.model_validate_json(args.limbo.read_text())
+    testcases = limbo.testcases
+
+    # Apply include/exclude filters
+    if args.include:
+        testcases = [tc for tc in testcases if fnmatch.fnmatch(tc.id, args.include)]
+    if args.exclude:
+        testcases = [tc for tc in testcases if not fnmatch.fnmatch(tc.id, args.exclude)]
+
+    # Create output directory
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    exported_count = 0
+    skipped_count = 0
+
+    for testcase in testcases:
+        # Collect all certificates in the chain
+        certs: list[x509.Certificate] = []
+
+        # Parse peer certificate
+        if testcase.peer_certificate:
+            try:
+                peer_cert = x509.load_pem_x509_certificate(testcase.peer_certificate.encode())
+                certs.append(peer_cert)
+            except ValueError as e:
+                logger.warning(f"Failed to parse peer certificate for {testcase.id}: {e}")
+                skipped_count += 1
+                continue
+
+        # Parse untrusted intermediates
+        for intermediate_pem in testcase.untrusted_intermediates:
+            try:
+                intermediate_cert = x509.load_pem_x509_certificate(intermediate_pem.encode())
+                certs.append(intermediate_cert)
+            except ValueError as e:
+                logger.warning(f"Failed to parse intermediate for {testcase.id}: {e}")
+
+        # Parse trusted certs
+        for trusted_pem in testcase.trusted_certs:
+            try:
+                trusted_cert = x509.load_pem_x509_certificate(trusted_pem.encode())
+                certs.append(trusted_cert)
+            except ValueError as e:
+                logger.warning(f"Failed to parse trusted cert for {testcase.id}: {e}")
+
+        # Skip if no certificates
+        if not certs:
+            logger.warning(f"No certificates found for {testcase.id}, skipping")
+            skipped_count += 1
+            continue
+
+        # Serialize to PKCS #7
+        try:
+            pkcs7_data = pkcs7.serialize_certificates(certs, encoding=serialization.Encoding.DER)
+
+            # Sanitize testcase ID for filename (replace :: with -)
+            safe_id = testcase.id.replace("::", "-")
+            output_file = args.output_dir / f"{safe_id}.p7c"
+
+            output_file.write_bytes(pkcs7_data)
+            exported_count += 1
+            logger.info(f"Exported {testcase.id} to {output_file}")
+        except (ValueError, OSError) as e:
+            logger.error(f"Failed to export {testcase.id}: {e}")
+            skipped_count += 1
+
+    print(f"Exported {exported_count} testcase(s) to {args.output_dir}")
+    if skipped_count > 0:
+        print(f"Skipped {skipped_count} testcase(s) due to errors")
