@@ -1,3 +1,21 @@
+---
+# Trigger - when should this workflow run?
+on:
+  issues:
+    types: [labeled]
+
+# Permissions - what can this workflow access?
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+# Outputs - what APIs and tools can the AI use?
+safe-outputs:
+  add-comment:
+  add-labels:
+---
+
 # Agent: Triage Issues
 
 This agent analyzes new issues synced from upstream and decides how to handle them.

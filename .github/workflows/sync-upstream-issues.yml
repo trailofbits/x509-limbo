@@ -34,7 +34,7 @@ jobs:
             -X GET \
             -f state=open \
             -f per_page=100 \
-            --jq '.[] | select(.pull_request == null) | {number, title, body, labels: [.labels[].name], created_at}' \
+            --jq '.[] | select(.pull_request == null) | {number, title, body, labels: [.labels[].name], created_at, comments}' \
             > "$TEMP_FILE"
 
           echo "issues_file=$TEMP_FILE" >> $GITHUB_OUTPUT
@@ -48,6 +48,82 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPSTREAM_REPO: C2SP/x509-limbo
         run: |
+          sync_upstream_comments() {
+            local upstream_num="$1"
+            local fork_issue_num="$2"
+
+            # Optional: avoid extra API calls when there are no comments
+            local comment_count="${3:-}"
+            if [ -n "$comment_count" ] && [ "$comment_count" -eq 0 ] 2>/dev/null; then
+              return
+            fi
+
+            echo "  ↪ Syncing comments from upstream #$upstream_num to fork issue #$fork_issue_num..."
+
+            local tmp_comments
+            tmp_comments="$(mktemp)"
+
+            # Fetch all comments from the upstream issue
+            gh api "repos/$UPSTREAM_REPO/issues/$upstream_num/comments" \
+              --paginate \
+              -X GET \
+              -f per_page=100 \
+              --jq '.[] | {id, user: .user.login, body, created_at, html_url}' \
+              > "$tmp_comments" || {
+                echo "  ⚠ Failed to fetch comments for upstream #$upstream_num"
+                rm -f "$tmp_comments"
+                return
+              }
+
+            if [ ! -s "$tmp_comments" ]; then
+              echo "  (no upstream comments to sync)"
+              rm -f "$tmp_comments"
+              return
+            fi
+
+            # Collect already-synced upstream comment IDs from the fork issue body markers
+            local existing_ids
+            existing_ids="$(mktemp)"
+
+            gh issue view "$fork_issue_num" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json comments \
+              --jq '.comments[].body // ""' 2>/dev/null \
+              | grep '<!-- upstream-comment-id:' \
+              | sed -E 's/.*<!-- upstream-comment-id: ([0-9]+) -->.*/\1/' \
+              | sort -u > "$existing_ids" || true
+
+            while IFS= read -r comment; do
+              local cid author created url body
+              cid="$(echo "$comment" | jq -r '.id')"
+
+              # Skip if we've already synced this upstream comment
+              if [ -s "$existing_ids" ] && grep -qx "$cid" "$existing_ids"; then
+                continue
+              fi
+
+              author="$(echo "$comment" | jq -r '.user')"
+              created="$(echo "$comment" | jq -r '.created_at')"
+              url="$(echo "$comment" | jq -r '.html_url')"
+              body="$(echo "$comment" | jq -r '.body')"
+
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "[DRY-RUN] Would sync comment $cid from upstream #$upstream_num to fork #$fork_issue_num"
+              else
+                COMMENT_BODY="<!-- upstream-comment-id: $cid -->"$'\n'
+                COMMENT_BODY+="_Synced from upstream comment by @$author on $created (upstream URL omitted to avoid cross-references)._ "$'\n\n'
+                COMMENT_BODY+="$body"
+
+                gh issue comment "$fork_issue_num" --repo "$GITHUB_REPOSITORY" --body "$COMMENT_BODY" >/dev/null 2>&1 || echo "  ⚠ Failed to add comment $cid to fork issue #$fork_issue_num"
+              fi
+
+              # Rate limiting - be nice to GitHub API
+              sleep 1
+            done < <(jq -c '.' "$tmp_comments")
+
+            rm -f "$tmp_comments" "$existing_ids"
+          }
+
           ISSUES_FILE="${{ steps.fetch.outputs.issues_file }}"
           CREATED_COUNT=0
           SKIPPED_COUNT=0
@@ -63,6 +139,7 @@ jobs:
             UPSTREAM_NUM=$(echo "$issue" | jq -r '.number')
             LABELS=$(echo "$issue" | jq -r '.labels | join(",")')
             CREATED_AT=$(echo "$issue" | jq -r '.created_at')
+            COMMENT_COUNT=$(echo "$issue" | jq -r '.comments // 0')
             TRACKING_LABEL="upstream-issue-$UPSTREAM_NUM"
 
             # Check if issue already exists in this fork using tracking label
@@ -83,9 +160,9 @@ jobs:
                 --force >/dev/null 2>&1
 
               # Prepare issue body with upstream reference
-              ISSUE_BODY="**Upstream Issue:** $UPSTREAM_REPO#$UPSTREAM_NUM
-              **Created:** $CREATED_AT
-              **Original Labels:** $LABELS
+              ISSUE_BODY="**Upstream origin:** $UPSTREAM_REPO (issue $UPSTREAM_NUM)
+              **Created upstream:** $CREATED_AT
+              **Original upstream labels:** $LABELS
 
               ---
 
@@ -93,7 +170,7 @@ jobs:
 
               ---
 
-              *This issue was automatically synced from the upstream repository.*"
+              *This issue was automatically synced from the upstream repository (no direct link added to avoid cross-references).*"
 
               if [ "$DRY_RUN" = "true" ]; then
                 echo "[DRY-RUN] Would create issue for upstream #$UPSTREAM_NUM with labels: upstream,needs-triage,$TRACKING_LABEL"
@@ -116,6 +193,19 @@ jobs:
                     # Fail fast on first creation error
                     exit 1
                   }
+
+                # Look up the created issue number using the tracking label
+                FORK_ISSUE_NUM="$(gh issue list \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --label "$TRACKING_LABEL" \
+                  --json number \
+                  --jq '.[0].number // empty')"
+
+                if [ -n "$FORK_ISSUE_NUM" ]; then
+                  sync_upstream_comments "$UPSTREAM_NUM" "$FORK_ISSUE_NUM" "$COMMENT_COUNT"
+                else
+                  echo "  ⚠ Unable to determine fork issue number for upstream #$UPSTREAM_NUM; skipping comment sync"
+                fi
               fi
 
               # Rate limiting - be nice to GitHub API
@@ -123,6 +213,8 @@ jobs:
             else
               SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
               echo "⊘ Issue already exists for upstream #$UPSTREAM_NUM (Fork #$EXISTING)"
+              # Sync any new comments from upstream to the existing fork issue
+              sync_upstream_comments "$UPSTREAM_NUM" "$EXISTING" "$COMMENT_COUNT"
             fi
           done < <(jq -c '.' "$ISSUES_FILE")
 
