@@ -266,7 +266,7 @@ def forbidden_weak_rsa_in_leaf(builder: Builder) -> None:
 
 
 @testcase
-def forbidden_rsa_not_divisable_by_8_in_root(builder: Builder) -> None:
+def forbidden_rsa_not_divisible_by_8_in_root(builder: Builder) -> None:
     """
     Produces the following **invalid** chain:
 
@@ -290,7 +290,7 @@ def forbidden_rsa_not_divisable_by_8_in_root(builder: Builder) -> None:
 
 
 @testcase
-def forbidden_rsa_key_not_divisable_by_8_in_leaf(builder: Builder) -> None:
+def forbidden_rsa_key_not_divisible_by_8_in_leaf(builder: Builder) -> None:
     """
     Produces the following **invalid** chain:
 
