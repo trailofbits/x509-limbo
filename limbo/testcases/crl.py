@@ -5,6 +5,7 @@ CRL (Certificate Revocation List) tests.
 from datetime import datetime, timedelta
 
 from cryptography import x509
+from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from .. import models
@@ -246,3 +247,265 @@ def crlnumber_critical(builder: Builder) -> None:
         .validation_time(leaf.cert.not_valid_before_utc + timedelta(seconds=2))
         .fails()
     )
+
+
+@testcase
+def similar_certs_different_serials(builder: Builder) -> None:
+    """
+    Tests that CRL revocation matches only on serial number, not other attributes.
+
+    Creates two certificates from the same CA with identical subject, public key,
+    and validity period but different serial numbers. Only one serial is revoked.
+    The non-revoked certificate should validate successfully, demonstrating that
+    revocation is based solely on serial number within the issuer's namespace.
+
+    This is the SUCCESS case - testing the certificate that is NOT revoked.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca()
+
+    # Generate a shared key for both certificates
+    shared_key = ec.generate_private_key(ec.SECP256R1())
+    shared_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "similar.example.com")])
+
+    # Certificate A: serial 1000 (will be revoked)
+    # We create this but don't use it for validation - just need its serial for CRL
+    _cert_a = builder.leaf_cert(
+        parent=root,
+        serial=1000,
+        key=shared_key,
+        subject=shared_subject,
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(x509.SubjectAlternativeName([x509.DNSName("similar.example.com")]), critical=False),
+    )
+
+    # Certificate B: serial 2000 (NOT revoked) - this is the one we validate
+    cert_b = builder.leaf_cert(
+        parent=root,
+        serial=2000,
+        key=shared_key,
+        subject=shared_subject,
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(x509.SubjectAlternativeName([x509.DNSName("similar.example.com")]), critical=False),
+    )
+
+    # CRL revokes only serial 1000
+    crl = builder.crl(
+        signer=root,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(1000)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    # Certificate B (serial 2000) should succeed - it's not revoked
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).peer_certificate(cert_b).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="similar.example.com")
+    ).crls(crl).validation_time(validation_time).succeeds()
+
+
+@testcase
+def similar_certs_different_serials_revoked(builder: Builder) -> None:
+    """
+    Tests that CRL revocation correctly matches a certificate by serial number.
+
+    Creates two certificates from the same CA with identical subject, public key,
+    and validity period but different serial numbers. Tests that the certificate
+    whose serial number appears on the CRL is correctly rejected.
+
+    This is the FAILURE case - testing the certificate that IS revoked.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca()
+
+    # Generate a shared key for both certificates
+    shared_key = ec.generate_private_key(ec.SECP256R1())
+    shared_subject = x509.Name(
+        [x509.NameAttribute(NameOID.COMMON_NAME, "similar-revoked.example.com")]
+    )
+
+    # Certificate A: serial 1000 (will be revoked) - this is the one we validate
+    cert_a = builder.leaf_cert(
+        parent=root,
+        serial=1000,
+        key=shared_key,
+        subject=shared_subject,
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("similar-revoked.example.com")]),
+            critical=False,
+        ),
+    )
+
+    # Certificate B: serial 2000 (NOT revoked)
+    # We create this to demonstrate both exist but only one is revoked
+    _cert_b = builder.leaf_cert(
+        parent=root,
+        serial=2000,
+        key=shared_key,
+        subject=shared_subject,
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("similar-revoked.example.com")]),
+            critical=False,
+        ),
+    )
+
+    # CRL revokes only serial 1000
+    crl = builder.crl(
+        signer=root,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(1000)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    # Certificate A (serial 1000) should fail - it IS revoked
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).peer_certificate(cert_a).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="similar-revoked.example.com")
+    ).crls(crl).validation_time(validation_time).fails()
+
+
+@testcase
+def adjacent_serial_numbers(builder: Builder) -> None:
+    """
+    Tests that adjacent serial numbers are distinguished correctly in CRL matching.
+
+    Creates two certificates with serial numbers that differ by only 1 (5000 and 5001).
+    Revokes only serial 5000. The certificate with serial 5001 should validate
+    successfully, ensuring implementations don't use approximate matching.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca()
+
+    # Certificate with serial 5001 (adjacent to revoked serial, but NOT revoked)
+    leaf = builder.leaf_cert(
+        parent=root,
+        serial=5001,
+        subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "adjacent-serial.example.com")]),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("adjacent-serial.example.com")]),
+            critical=False,
+        ),
+    )
+
+    # CRL revokes serial 5000 (adjacent to our certificate's serial)
+    crl = builder.crl(
+        signer=root,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(5000)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    # Certificate with serial 5001 should succeed - only 5000 is revoked
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="adjacent-serial.example.com")
+    ).crls(crl).validation_time(validation_time).succeeds()
+
+
+@testcase
+def small_serial_number_revocation(builder: Builder) -> None:
+    """
+    Tests CRL revocation of a certificate with a small serial number (1).
+
+    While RFC 5280 requires serial numbers to be positive integers, very small
+    values like 1 are valid. This test ensures implementations correctly handle
+    revocation of certificates with minimal serial number values.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca()
+
+    # Certificate with serial 1 (smallest valid serial number)
+    leaf = builder.leaf_cert(
+        parent=root,
+        serial=1,
+        subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "small-serial.example.com")]),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("small-serial.example.com")]),
+            critical=False,
+        ),
+    )
+
+    # CRL revokes serial 1
+    crl = builder.crl(
+        signer=root,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(1)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    # Certificate should fail - serial 1 is revoked
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="small-serial.example.com")
+    ).crls(crl).validation_time(validation_time).fails()
+
+
+@testcase
+def large_serial_number_revocation(builder: Builder) -> None:
+    """
+    Tests CRL revocation of a certificate with a very large serial number.
+
+    Per RFC 5280, serial numbers can be up to 20 octets. This test uses a
+    large serial number (2^127) to ensure implementations correctly handle
+    revocation matching for large serial number values.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    # Large serial number (2^127, which is a 128-bit positive integer)
+    large_serial = 2**127
+
+    root = builder.root_ca()
+
+    # Certificate with large serial number
+    leaf = builder.leaf_cert(
+        parent=root,
+        serial=large_serial,
+        subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "large-serial.example.com")]),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("large-serial.example.com")]),
+            critical=False,
+        ),
+    )
+
+    # CRL revokes the large serial number
+    crl = builder.crl(
+        signer=root,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(large_serial)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    # Certificate should fail - large serial is revoked
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="large-serial.example.com")
+    ).crls(crl).validation_time(validation_time).fails()
