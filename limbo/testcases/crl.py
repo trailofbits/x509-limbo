@@ -252,11 +252,14 @@ def crlnumber_critical(builder: Builder) -> None:
 def revocation_date_future_1_day(builder: Builder) -> None:
     """
     Tests that a certificate with a revocation date 1 day in the future
-    is accepted during validation.
+    is rejected during validation.
 
-    RFC 5280 does not explicitly define behavior for future revocation dates.
-    This test documents whether implementations treat future-dated revocations
-    as already revoked or as scheduled revocations that haven't taken effect.
+    Per RFC 5280 Section 5.3.2, the revocationDate field represents "the date
+    at which the CA processed the revocation," not when revocation takes effect.
+    The CRL processing algorithm in Section 6.3.3 determines revocation status
+    based solely on the certificate's presence on the CRL, with no comparison
+    of revocationDate to validation time. Therefore, a certificate appearing
+    on a CRL is considered revoked regardless of the revocationDate value.
     """
     validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
 
@@ -290,17 +293,21 @@ def revocation_date_future_1_day(builder: Builder) -> None:
         Importance.HIGH
     ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
         models.PeerName(kind=PeerKind.DNS, value="future-revocation.example.com")
-    ).crls(crl).validation_time(validation_time).succeeds()
+    ).crls(crl).validation_time(validation_time).fails()
 
 
 @testcase
 def revocation_date_future_1_hour(builder: Builder) -> None:
     """
     Tests that a certificate with a revocation date 1 hour in the future
-    is accepted during validation.
+    is rejected during validation.
 
-    This tests a smaller time window to explore edge cases in implementations
-    that may have different tolerances for "future" revocation dates.
+    Per RFC 5280 Section 5.3.2, the revocationDate field represents "the date
+    at which the CA processed the revocation," not when revocation takes effect.
+    The CRL processing algorithm in Section 6.3.3 determines revocation status
+    based solely on the certificate's presence on the CRL, with no comparison
+    of revocationDate to validation time. Therefore, a certificate appearing
+    on a CRL is considered revoked regardless of the revocationDate value.
     """
     validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
 
@@ -334,7 +341,7 @@ def revocation_date_future_1_hour(builder: Builder) -> None:
         Importance.HIGH
     ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
         models.PeerName(kind=PeerKind.DNS, value="future-revocation-1h.example.com")
-    ).crls(crl).validation_time(validation_time).succeeds()
+    ).crls(crl).validation_time(validation_time).fails()
 
 
 @testcase
