@@ -141,9 +141,10 @@ def ee_clientauth_only(builder: Builder) -> None:
     ```
 
     This chain is correctly constructed, but the EE cert contains an
-    Extended Key Usage extension that only contains clientAuth,
-    missing the required serverAuth OID per CABF requirements.
-    Subscriber certificates MUST include id-kp-serverAuth (1.3.6.1.5.5.7.3.1).
+    Extended Key Usage extension that only contains id-kp-clientAuth,
+    missing the required id-kp-serverAuth OID.
+    Per CABF BR 7.1.2.7.10, subscriber certificates MUST include
+    id-kp-serverAuth (1.3.6.1.5.5.7.3.1).
     """
 
     root = builder.root_ca()
@@ -171,9 +172,11 @@ def ee_precertificate_only(builder: Builder) -> None:
     ```
 
     This chain is correctly constructed, but the EE cert contains an
-    Extended Key Usage extension that only contains the precertificate
-    signing OID (1.3.6.1.4.1.11129.2.4.4), which is prohibited in
-    production certificates per CABF requirements.
+    Extended Key Usage extension that only contains the Precertificate
+    Signing Certificate OID (1.3.6.1.4.1.11129.2.4.4).
+    Per CABF BR 7.1.2.7.10, this OID MUST NOT appear in subscriber
+    certificates. Per RFC 6962 Section 3.1, this OID is reserved for
+    special-purpose CA certificates used in Certificate Transparency.
     """
 
     # Create the precertificate OID
@@ -204,10 +207,12 @@ def ee_precertificate_with_serverauth(builder: Builder) -> None:
     ```
 
     This chain is correctly constructed, but the EE cert contains an
-    Extended Key Usage extension that includes both serverAuth and
-    the precertificate signing OID (1.3.6.1.4.1.11129.2.4.4).
-    The precertificate OID is prohibited in production certificates
-    per CABF requirements, even when serverAuth is present.
+    Extended Key Usage extension that includes both id-kp-serverAuth and
+    the Precertificate Signing Certificate OID (1.3.6.1.4.1.11129.2.4.4).
+    Per CABF BR 7.1.2.7.10, the Precertificate Signing Certificate OID
+    MUST NOT appear in subscriber certificates, even when id-kp-serverAuth
+    is present. Per RFC 6962 Section 3.1, this OID is reserved for
+    special-purpose CA certificates used in Certificate Transparency.
     """
 
     # Create the precertificate OID
@@ -238,10 +243,9 @@ def ee_serverauth_with_additional(builder: Builder) -> None:
     ```
 
     This chain is correctly constructed. The EE cert contains an
-    Extended Key Usage extension that includes serverAuth along with
-    additional valid purposes (clientAuth in this case).
-    This is valid per CABF requirements as long as serverAuth is present
-    and no prohibited OIDs are included.
+    Extended Key Usage extension that includes id-kp-serverAuth along with
+    id-kp-clientAuth. Per CABF BR 7.1.2.7.10, id-kp-serverAuth MUST be
+    present and id-kp-clientAuth MAY be present, so this combination is valid.
     """
 
     root = builder.root_ca()
@@ -257,3 +261,129 @@ def ee_serverauth_with_additional(builder: Builder) -> None:
     builder.trusted_certs(root).peer_certificate(leaf).expected_peer_name(
         PeerName(kind="DNS", value="example.com")
     ).extended_key_usage([KnownEKUs.server_auth]).succeeds()
+
+
+@testcase
+def ee_codesigning_with_serverauth(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE
+    ```
+
+    This chain is correctly constructed, but the EE cert contains an
+    Extended Key Usage extension that includes both id-kp-serverAuth and
+    id-kp-codeSigning (1.3.6.1.5.5.7.3.3).
+    Per CABF BR 7.1.2.7.10, id-kp-codeSigning MUST NOT appear in
+    subscriber certificates for TLS.
+    """
+
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_SERVER_AUTH, x509.ExtendedKeyUsageOID.CODE_SIGNING]),
+            critical=False,
+        ),
+    )
+
+    builder = builder.server_validation().features([Feature.pedantic_webpki_eku])
+    builder.trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        PeerName(kind="DNS", value="example.com")
+    ).extended_key_usage([KnownEKUs.server_auth]).fails()
+
+
+@testcase
+def ee_emailprotection_with_serverauth(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE
+    ```
+
+    This chain is correctly constructed, but the EE cert contains an
+    Extended Key Usage extension that includes both id-kp-serverAuth and
+    id-kp-emailProtection (1.3.6.1.5.5.7.3.4).
+    Per CABF BR 7.1.2.7.10, id-kp-emailProtection MUST NOT appear in
+    subscriber certificates for TLS.
+    """
+
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        eku=ext(
+            x509.ExtendedKeyUsage(
+                [x509.OID_SERVER_AUTH, x509.ExtendedKeyUsageOID.EMAIL_PROTECTION]
+            ),
+            critical=False,
+        ),
+    )
+
+    builder = builder.server_validation().features([Feature.pedantic_webpki_eku])
+    builder.trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        PeerName(kind="DNS", value="example.com")
+    ).extended_key_usage([KnownEKUs.server_auth]).fails()
+
+
+@testcase
+def ee_timestamping_with_serverauth(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE
+    ```
+
+    This chain is correctly constructed, but the EE cert contains an
+    Extended Key Usage extension that includes both id-kp-serverAuth and
+    id-kp-timeStamping (1.3.6.1.5.5.7.3.8).
+    Per CABF BR 7.1.2.7.10, id-kp-timeStamping MUST NOT appear in
+    subscriber certificates for TLS.
+    """
+
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_SERVER_AUTH, x509.ExtendedKeyUsageOID.TIME_STAMPING]),
+            critical=False,
+        ),
+    )
+
+    builder = builder.server_validation().features([Feature.pedantic_webpki_eku])
+    builder.trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        PeerName(kind="DNS", value="example.com")
+    ).extended_key_usage([KnownEKUs.server_auth]).fails()
+
+
+@testcase
+def ee_ocspsigning_with_serverauth(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE
+    ```
+
+    This chain is correctly constructed, but the EE cert contains an
+    Extended Key Usage extension that includes both id-kp-serverAuth and
+    id-kp-OCSPSigning (1.3.6.1.5.5.7.3.9).
+    Per CABF BR 7.1.2.7.10, id-kp-OCSPSigning MUST NOT appear in
+    subscriber certificates for TLS.
+    """
+
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        eku=ext(
+            x509.ExtendedKeyUsage([x509.OID_SERVER_AUTH, x509.ExtendedKeyUsageOID.OCSP_SIGNING]),
+            critical=False,
+        ),
+    )
+
+    builder = builder.server_validation().features([Feature.pedantic_webpki_eku])
+    builder.trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        PeerName(kind="DNS", value="example.com")
+    ).extended_key_usage([KnownEKUs.server_auth]).fails()
