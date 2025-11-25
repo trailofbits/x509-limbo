@@ -77,14 +77,14 @@ jobs:
         env:
           PR_BODY: ${{ steps.fork_pr.outputs.body }}
         run: |
-          # Extract upstream issue reference (e.g., "Upstream Issue: owner/repo#123")
-          UPSTREAM_REF=$(echo "$PR_BODY" | grep -oP 'Upstream Issue:\s*\K[^\s]+' || echo "")
+          # Extract upstream issue reference (e.g., "Upstream origin: owner/repo issue 123")
+          UPSTREAM_REF=$(echo "$PR_BODY" | grep -oP 'Upstream origin:\s*\K.+' || echo "")
 
           if [ -z "$UPSTREAM_REF" ]; then
-            # Try to extract from title (e.g., "Upstream #123:")
-            UPSTREAM_NUM=$(echo "${{ steps.fork_pr.outputs.title }}" | grep -oP 'Upstream #\K\d+' || echo "")
+            # Try to extract from title (e.g., "Upstream issue 123:")
+            UPSTREAM_NUM=$(echo "${{ steps.fork_pr.outputs.title }}" | grep -oP 'Upstream issue\s+\K\d+' || echo "")
             if [ -n "$UPSTREAM_NUM" ]; then
-              UPSTREAM_REF="C2SP/x509-limbo#$UPSTREAM_NUM"
+              UPSTREAM_REF="C2SP/x509-limbo issue $UPSTREAM_NUM"
             fi
           fi
 
@@ -142,24 +142,24 @@ jobs:
           UPSTREAM_REF: ${{ steps.upstream.outputs.reference }}
         run: |
           cat > upstream_pr_body.md << 'UPSTREAMEOF'
-## Description
-This PR addresses ${{ steps.upstream.outputs.reference }}
+          ## Description
+          This PR addresses: ${{ steps.upstream.outputs.reference }}
 
-${{ steps.fork_pr.outputs.body }}
+          ${{ steps.fork_pr.outputs.body }}
 
-## Testing
-All tests have been run and are passing in the fork.
+          ## Testing
+          All tests have been run and are passing in the fork.
 
-## Checklist
-- [x] Code follows project style guidelines
-- [x] Self-review completed
-- [x] Tests added/updated
-- [x] All tests passing
-- [x] Documentation updated if needed
+          ## Checklist
+          - [x] Code follows project style guidelines
+          - [x] Self-review completed
+          - [x] Tests added/updated
+          - [x] All tests passing
+          - [x] Documentation updated if needed
 
----
-*This contribution was developed and tested in a fork: ${{ github.repository }}#${{ steps.pr.outputs.number }}*
-UPSTREAMEOF
+          ---
+          *This contribution was developed and tested in a fork: ${{ github.repository }} pull request ${{ steps.pr.outputs.number }}*
+          UPSTREAMEOF
 
           echo "body<<UPSTREAMEOF" >> $GITHUB_OUTPUT
           cat upstream_pr_body.md >> $GITHUB_OUTPUT
@@ -198,23 +198,12 @@ UPSTREAMEOF
             exit 0
           fi
 
-          gh pr comment ${{ steps.pr.outputs.number }} --repo "$GITHUB_REPOSITORY" --body "🚀 **Ready for Upstream Submission**
+          COMMENT_BODY="🚀 **Ready for Upstream Submission**"$'\n\n'
+          COMMENT_BODY+="Branch \`${{ steps.upstream_branch.outputs.branch }}\` has been prepared and rebased on upstream/main."$'\n\n'
+          COMMENT_BODY+="## Next Steps"$'\n'
+          COMMENT_BODY+="Use the GitHub web UI on the upstream repository to create a PR from branch \`${{ steps.upstream_branch.outputs.branch }}\`."$'\n\n'
+          COMMENT_BODY+="⚠️ Automated PR creation requires additional permissions and configuration."
 
-Branch \`${{ steps.upstream_branch.outputs.branch }}\` has been prepared and rebased on upstream/main.
-
-## Next Steps
-To create the upstream PR, run:
-\`\`\`bash
-gh pr create \\
-  --repo C2SP/x509-limbo \\
-  --base main \\
-  --head ${{ github.repository_owner }}:${{ steps.upstream_branch.outputs.branch }} \\
-  --title \"${{ steps.fork_pr.outputs.title }}\" \\
-  --body-file upstream_pr_body.md
-\`\`\`
-
-Or use the GitHub web interface to create a PR from the branch.
-
-⚠️ Automated PR creation requires additional permissions and configuration."
+          gh pr comment ${{ steps.pr.outputs.number }} --repo "$GITHUB_REPOSITORY" --body "$COMMENT_BODY"
 
           gh pr edit ${{ steps.pr.outputs.number }} --repo "$GITHUB_REPOSITORY" --add-label "ready-for-upstream"

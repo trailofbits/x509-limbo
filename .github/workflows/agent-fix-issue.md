@@ -1,3 +1,22 @@
+---
+# Trigger - when should this workflow run?
+on:
+  issues:
+    types: [labeled]
+
+# Permissions - what can this workflow access?
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+# Outputs - what APIs and tools can the AI use?
+safe-outputs:
+  create-pull-request:
+  add-comment:
+  add-labels:
+---
+
 # Agent: Fix Issue
 
 This agent autonomously fixes issues that have been triaged and marked as suitable for automated resolution.

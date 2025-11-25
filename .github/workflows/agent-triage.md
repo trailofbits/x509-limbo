@@ -10,6 +10,9 @@ permissions:
   issues: write
   pull-requests: write
 
+# AI engine configuration
+engine: claude
+
 # Outputs - what APIs and tools can the AI use?
 safe-outputs:
   add-comment:
