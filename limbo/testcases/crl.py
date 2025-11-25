@@ -495,6 +495,20 @@ def issuer_mismatch_root_vs_intermediate(builder: Builder) -> None:
         parent=root,
         subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Intermediate CA")]),
         pathlen=0,
+        key_usage=ext(
+            x509.KeyUsage(
+                digital_signature=False,
+                key_cert_sign=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=False,
+        ),
     )
 
     leaf = builder.leaf_cert(parent=intermediate)
