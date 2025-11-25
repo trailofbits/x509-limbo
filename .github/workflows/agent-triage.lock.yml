@@ -169,13 +169,16 @@
 # - `area:security`: Security concerns
 #
 # ### Step 5: Determine Auto-fix Eligibility
-# An issue is eligible for automated fixing if ALL criteria are met:
-# - Complexity is trivial or easy
-# - Requirements are clear and unambiguous
-# - No breaking changes involved
-# - Existing tests can validate the fix
-# - No external dependencies needed
-# - Change is localized (< 5 files)
+# Default to **optimistic auto-fix**.
+#
+# An issue should receive the `agent-fix` label **unless** one or more of these are true:
+# - The description or requirements are unclear even after careful reading.
+# - The change appears to be large-scale or architectural (e.g., affects many subsystems, major refactor).
+# - It is primarily a **process**, coordination, or product decision issue (not a code change).
+#
+# Guidelines:
+# - Medium or even hard issues can still be marked `agent-fix` if the goals are clear and the blast radius is understood.
+# - When in doubt, **prefer to add `agent-fix`** and clearly call out any risks or unknowns in your triage comment.
 #
 # If eligible, add label: `agent-fix`
 #
@@ -235,7 +238,7 @@
 # - Issue is properly categorized with type label
 # - Complexity and area labels are accurate
 # - Priority is appropriately assigned
-# - Auto-fix decision is correct (no false positives)
+# - Auto-fix decision is **optimistic but well-documented** (rare false negatives; risks called out in the comment)
 # - Analysis comment is helpful and actionable
 # - `needs-triage` label is removed
 #
@@ -2280,13 +2283,16 @@ jobs:
           - `area:security`: Security concerns
           
           ### Step 5: Determine Auto-fix Eligibility
-          An issue is eligible for automated fixing if ALL criteria are met:
-          - Complexity is trivial or easy
-          - Requirements are clear and unambiguous
-          - No breaking changes involved
-          - Existing tests can validate the fix
-          - No external dependencies needed
-          - Change is localized (< 5 files)
+          Default to **optimistic auto-fix**.
+          
+          An issue should receive the `agent-fix` label **unless** one or more of these are true:
+          - The description or requirements are unclear even after careful reading.
+          - The change appears to be large-scale or architectural (e.g., affects many subsystems, major refactor).
+          - It is primarily a **process**, coordination, or product decision issue (not a code change).
+          
+          Guidelines:
+          - Medium or even hard issues can still be marked `agent-fix` if the goals are clear and the blast radius is understood.
+          - When in doubt, **prefer to add `agent-fix`** and clearly call out any risks or unknowns in your triage comment.
           
           If eligible, add label: `agent-fix`
           
@@ -2346,7 +2352,7 @@ jobs:
           - Issue is properly categorized with type label
           - Complexity and area labels are accurate
           - Priority is appropriately assigned
-          - Auto-fix decision is correct (no false positives)
+          - Auto-fix decision is **optimistic but well-documented** (rare false negatives; risks called out in the comment)
           - Analysis comment is helpful and actionable
           - `needs-triage` label is removed
           
