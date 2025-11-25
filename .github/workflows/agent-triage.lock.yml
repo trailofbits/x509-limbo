@@ -280,7 +280,7 @@ run-name: "Agent: Triage Issues"
 jobs:
   activation:
     needs: pre_activation
-    if: needs.pre_activation.outputs.activated == 'true'
+    if: (needs.pre_activation.outputs.activated == 'true') && (github.event.label.name == 'needs-triage')
     runs-on: ubuntu-slim
     permissions:
       contents: read
@@ -5317,6 +5317,7 @@ jobs:
             });
 
   pre_activation:
+    if: github.event.label.name == 'needs-triage'
     runs-on: ubuntu-slim
     outputs:
       activated: ${{ steps.check_membership.outputs.is_team_member == 'true' }}

@@ -4,6 +4,9 @@ on:
   issues:
     types: [labeled]
 
+# Only run when the 'needs-triage' label is added
+if: github.event.label.name == 'needs-triage'
+
 # Permissions - what can this workflow access?
 permissions:
   contents: read
