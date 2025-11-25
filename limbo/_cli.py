@@ -130,6 +130,28 @@ def main() -> None:
     )
     extract.set_defaults(func=_extract)
 
+    # `limbo explain`
+    explain = subparsers.add_parser(
+        "explain", help="Generate a markdown-formatted explanation of a testcase"
+    )
+    explain.add_argument(
+        "--limbo",
+        type=Path,
+        default=Path("limbo.json"),
+        metavar="FILE",
+        help="The limbo testcase suite to load from",
+    )
+    explain.add_argument(
+        "--output",
+        type=str,
+        metavar="FILE",
+        help="The filename to write the explanation to; use - for stdout (default)",
+    )
+    explain.add_argument(
+        "id", type=str, metavar="TESTCASE-ID", help="The testcase to explain, by ID"
+    )
+    explain.set_defaults(func=_explain)
+
     args = parser.parse_args()
     args.func(args)
 
@@ -294,3 +316,24 @@ def _extract(args: argparse.Namespace) -> None:
         print(testcase.model_dump_json(indent=2), file=sys.stdout)
     else:
         Path(output).write_text(testcase.model_dump_json(indent=2))
+
+
+def _explain(args: argparse.Namespace) -> None:
+    limbo = Limbo.model_validate_json(args.limbo.read_text())
+
+    try:
+        testcase = limbo.by_id[args.id]
+    except KeyError:
+        logger.error(f"no such testcase: {args.id}")
+        sys.exit(1)
+
+    template = _markdown.template("explain.md")
+    explanation = template.render(
+        testcase=testcase,
+        testcase_id=args.id,
+    )
+
+    if args.output == "-" or not args.output:
+        print(explanation, file=sys.stdout)
+    else:
+        Path(args.output).write_text(explanation)
