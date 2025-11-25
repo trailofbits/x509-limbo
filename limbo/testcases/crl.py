@@ -304,3 +304,36 @@ def issuer_mismatch_root_vs_intermediate(builder: Builder) -> None:
     ).peer_certificate(leaf).expected_peer_name(
         models.PeerName(kind=PeerKind.DNS, value="example.com")
     ).crls(crl_from_root, crl_from_intermediate).validation_time(validation_time).succeeds()
+
+
+@testcase
+def crl_issuer_name_signature_mismatch(builder: Builder) -> None:
+    """
+    Tests that a CRL with an issuer name that doesn't match the signer is rejected.
+
+    The CRL is signed by the root CA but claims a different issuer name.
+    Per RFC 5280, the CRL issuer name must match the certificate issuer,
+    and the CRL signature must be verifiable by that issuer's key.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca(issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Root CA")]))
+    leaf = builder.leaf_cert(parent=root)
+
+    # CRL signed by root but with mismatched issuer name
+    crl = builder.crl(
+        signer=root,
+        issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Fake Issuer")]),
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(leaf.cert.serial_number)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    builder.features([Feature.has_crl]).server_validation().trusted_certs(root).peer_certificate(
+        leaf
+    ).expected_peer_name(models.PeerName(kind=PeerKind.DNS, value="example.com")).crls(
+        crl
+    ).validation_time(validation_time).fails()
