@@ -32,6 +32,23 @@ make dev && source env/bin/activate
 limbo --help
 ```
 
+### Optional: DER manipulation support
+
+Some test cases require low-level DER manipulation to create structurally
+invalid certificates. This functionality requires Google's
+[der-ascii](https://github.com/google/der-ascii) tools to be installed.
+
+```bash
+# Requires Go 1.20+
+go install github.com/google/der-ascii/cmd/...@latest
+```
+
+Ensure the Go bin directory is on your PATH (typically `~/go/bin`).
+
+If der-ascii is not available, test cases using `raw_leaf_cert()` or
+`raw_crl()` will be skipped gracefully (methods return `None` and log a
+warning).
+
 This tool can be used to regenerate the schema, as well as
 develop and manage testcases and testcase assets:
 
