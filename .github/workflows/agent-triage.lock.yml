@@ -60,12 +60,20 @@
 # - Upstream: Original issue from upstream repository
 #
 # ## Objective
-# Analyze the issue and determine:
+# Analyze the **currently triggered issue** and determine:
 # 1. Type of issue (bug, feature, enhancement, documentation, etc.)
 # 2. Complexity level (trivial, easy, medium, hard, complex)
 # 3. Required skill areas (frontend, backend, database, devops, etc.)
 # 4. Whether it's suitable for automated fixing
 # 5. Priority level based on impact and effort
+#
+# ## Scope & Safety
+#
+# - Treat the **triggering issue only** as your source of truth.
+# - You may **only** add comments and labels to this issue.
+# - Do **not** create, close, or relabel any other issues or PRs.
+# - When you need to reference related or upstream issues, mention them **only inside the comment on this issue**.
+# - Keep your analysis and summary clearly scoped to this one issue, even if upstream context mentions multiple tasks.
 #
 # ## Process
 #
@@ -98,6 +106,14 @@
 #     - Optionally repurpose it as a meta/tracking issue (linking the new local issues) or close it as \"split\".
 #     - Clearly state which local issues correspond to which original task items.
 #
+# #### Implementation note for the agent
+#
+# - You **must not** create or modify other issues automatically.
+# - Instead, in your triage comment on this issue:
+#   - Summarize the checklist items and proposed splits.
+#   - Make it clear these are **suggestions for human maintainers** to create or update other issues.
+#   - Keep all concrete actions (comments and labels) scoped to this single issue.
+#
 # ### Step 1b: Localize Cross-References
 # - When an upstream-synced issue body or comments reference other issues:
 #   - Avoid using `C2SP/x509-limbo#<N>` or `owner/repo#<N>` in a way that pings upstream.
@@ -109,6 +125,11 @@
 #   - When rewriting text, replace:
 #     - `C2SP/x509-limbo#<N>` with one or more local references (e.g. `#123, #124`) plus a non-linking upstream note if needed.
 #     - Bare `#<N>` that clearly refers to upstream with the appropriate local issue number.
+#
+# #### Implementation note for the agent
+#
+# - Do **not** call `gh issue list` or edit other issues.
+# - You may reason about likely local mappings in your comment, but restrict concrete changes (labels, comments) to this issue only.
 #
 # ### Step 2: Analyze Complexity
 # Assess complexity based on:
@@ -2150,12 +2171,20 @@ jobs:
           - Upstream: Original issue from upstream repository
           
           ## Objective
-          Analyze the issue and determine:
+          Analyze the **currently triggered issue** and determine:
           1. Type of issue (bug, feature, enhancement, documentation, etc.)
           2. Complexity level (trivial, easy, medium, hard, complex)
           3. Required skill areas (frontend, backend, database, devops, etc.)
           4. Whether it's suitable for automated fixing
           5. Priority level based on impact and effort
+          
+          ## Scope & Safety
+          
+          - Treat the **triggering issue only** as your source of truth.
+          - You may **only** add comments and labels to this issue.
+          - Do **not** create, close, or relabel any other issues or PRs.
+          - When you need to reference related or upstream issues, mention them **only inside the comment on this issue**.
+          - Keep your analysis and summary clearly scoped to this one issue, even if upstream context mentions multiple tasks.
           
           ## Process
           
@@ -2188,6 +2217,14 @@ jobs:
               - Optionally repurpose it as a meta/tracking issue (linking the new local issues) or close it as \"split\".
               - Clearly state which local issues correspond to which original task items.
           
+          #### Implementation note for the agent
+          
+          - You **must not** create or modify other issues automatically.
+          - Instead, in your triage comment on this issue:
+            - Summarize the checklist items and proposed splits.
+            - Make it clear these are **suggestions for human maintainers** to create or update other issues.
+            - Keep all concrete actions (comments and labels) scoped to this single issue.
+          
           ### Step 1b: Localize Cross-References
           - When an upstream-synced issue body or comments reference other issues:
             - Avoid using `C2SP/x509-limbo#<N>` or `owner/repo#<N>` in a way that pings upstream.
@@ -2199,6 +2236,11 @@ jobs:
             - When rewriting text, replace:
               - `C2SP/x509-limbo#<N>` with one or more local references (e.g. `#123, #124`) plus a non-linking upstream note if needed.
               - Bare `#<N>` that clearly refers to upstream with the appropriate local issue number.
+          
+          #### Implementation note for the agent
+          
+          - Do **not** call `gh issue list` or edit other issues.
+          - You may reason about likely local mappings in your comment, but restrict concrete changes (labels, comments) to this issue only.
           
           ### Step 2: Analyze Complexity
           Assess complexity based on:
