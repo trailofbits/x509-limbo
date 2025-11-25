@@ -4,7 +4,7 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 from textwrap import dedent
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -16,9 +16,13 @@ from limbo.assets import (
     ONE_THOUSAND_YEARS_OF_TORMENT,
     Certificate,
     CertificatePair,
+    RawCertificate,
+    RawCertificatePair,
+    RawCRL,
     _Extension,
     ext,
 )
+from limbo.der import modify_certificate, modify_crl
 from limbo.models import (
     Feature,
     Importance,
@@ -412,6 +416,96 @@ class Builder:
 
         return crl
 
+    def raw_leaf_cert(
+        self,
+        parent: CertificatePair,
+        modifier: Callable[[str], str],
+        **kwargs: Any,
+    ) -> RawCertificatePair | None:
+        """
+        Create a leaf certificate with raw DER modification.
+
+        This method first creates a valid leaf certificate using `leaf_cert()`,
+        then applies the modifier function to the DER-ASCII representation,
+        and re-signs the modified TBSCertificate.
+
+        Requires the der-ascii tools (`der2ascii` and `ascii2der`) to be
+        installed. If not available, returns None and logs a warning.
+
+        Args:
+            parent: The issuing CA certificate pair.
+            modifier: Function that takes ASCII representation and returns
+                modified ASCII. The modifier operates on the full certificate
+                structure, but only the TBSCertificate portion will be
+                extracted and re-signed.
+            **kwargs: Additional arguments passed to `leaf_cert()`.
+
+        Returns:
+            RawCertificatePair containing the modified certificate and key,
+            or None if der-ascii tools are not available.
+        """
+        # First create a valid certificate
+        cert_pair = self.leaf_cert(parent, **kwargs)
+
+        # Modify and re-sign
+        modified_der = modify_certificate(
+            cert_pair.cert,
+            parent.key,
+            modifier,
+        )
+
+        if modified_der is None:
+            return None
+
+        return RawCertificatePair(modified_der, cert_pair.key)
+
+    def raw_crl(
+        self,
+        signer: CertificatePair | None,
+        modifier: Callable[[str], str],
+        **kwargs: Any,
+    ) -> RawCRL | None:
+        """
+        Create a CRL with raw DER modification.
+
+        This method first creates a valid CRL using `crl()`, then applies the
+        modifier function to the DER-ASCII representation, and re-signs the
+        modified TBSCertList.
+
+        Requires the der-ascii tools (`der2ascii` and `ascii2der`) to be
+        installed. If not available, returns None and logs a warning.
+
+        Args:
+            signer: The CA certificate pair that signs the CRL, or None
+                for a self-signed CRL.
+            modifier: Function that takes ASCII representation and returns
+                modified ASCII.
+            **kwargs: Additional arguments passed to `crl()`.
+
+        Returns:
+            RawCRL containing the modified CRL, or None if der-ascii tools
+            are not available.
+        """
+        # First create a valid CRL
+        crl_obj = self.crl(signer, **kwargs)
+
+        # Get signing key
+        if signer is not None:
+            signing_key = signer.key
+        else:
+            # For self-signed CRLs, we need a key but don't have one accessible
+            # This is a limitation - raw_crl requires a signer
+            logger.warning("raw_crl requires a signer for re-signing")
+            return None
+
+        # Modify and re-sign
+        modified_der = modify_crl(crl_obj, signing_key, modifier)
+
+        if modified_der is None:
+            return None
+
+        return RawCRL(modified_der)
+
     def __init__(self, id: str, description: str):
         self._id = id
         self._conflicts_with: list[str] = []
@@ -454,18 +548,20 @@ class Builder:
         self._validation_kind = "SERVER"
         return self
 
-    def trusted_certs(self, *certs: Certificate) -> Self:
+    def trusted_certs(self, *certs: Certificate | RawCertificate) -> Self:
         self._trusted_certs = [c.cert_pem for c in certs]
         return self
 
-    def untrusted_intermediates(self, *certs: Certificate) -> Self:
+    def untrusted_intermediates(self, *certs: Certificate | RawCertificate) -> Self:
         self._untrusted_intermediates = [c.cert_pem for c in certs]
         return self
 
-    def peer_certificate(self, cert: Certificate | CertificatePair) -> Self:
+    def peer_certificate(
+        self, cert: Certificate | CertificatePair | RawCertificate | RawCertificatePair
+    ) -> Self:
         self._peer_certificate = cert.cert_pem
 
-        if isinstance(cert, CertificatePair):
+        if isinstance(cert, (CertificatePair, RawCertificatePair)):
             self._peer_certificate_key = cert.key_pem
         return self
 
@@ -505,7 +601,7 @@ class Builder:
         self._max_chain_depth = max_chain_depth
         return self
 
-    def crls(self, *crls: x509.CertificateRevocationList) -> Self:
+    def crls(self, *crls: x509.CertificateRevocationList | RawCRL) -> Self:
         self._crls = [c.public_bytes(serialization.Encoding.PEM).decode() for c in crls]
         return self
 
