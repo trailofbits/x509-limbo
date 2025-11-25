@@ -479,6 +479,50 @@ def issuer_valid_crlsign_and_keycertsign(builder: Builder) -> None:
 
 
 @testcase
+def issuer_mismatch_root_vs_intermediate(builder: Builder) -> None:
+    """
+    Tests that a CRL issued by a root CA does not apply to certificates
+    issued by an intermediate CA, even if the CRL lists the certificate's serial.
+
+    Per RFC 5280 Section 6.3.3, the CRL issuer must match the certificate issuer.
+    A CRL from the root CA should not affect certificates issued by intermediates.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca(issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Root CA")]))
+
+    intermediate = builder.intermediate_ca(
+        parent=root,
+        subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Intermediate CA")]),
+        pathlen=0,
+    )
+
+    leaf = builder.leaf_cert(parent=intermediate)
+
+    # CRL from root CA listing the leaf's serial - should not apply
+    crl_from_root = builder.crl(
+        signer=root,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(leaf.cert.serial_number)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    # Also provide a valid (empty) CRL from the intermediate
+    crl_from_intermediate = builder.crl(signer=intermediate, revoked=[])
+
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).untrusted_intermediates(
+        intermediate
+    ).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="example.com")
+    ).crls(crl_from_root, crl_from_intermediate).validation_time(validation_time).succeeds()
+
+
+@testcase
 def issuer_only_crlsign(builder: Builder) -> None:
     """
     Tests CRL validation when the CA issuer has a keyUsage extension with only
