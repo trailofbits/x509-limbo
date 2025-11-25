@@ -377,8 +377,17 @@ def issuer_no_keyusage_extension(builder: Builder) -> None:
     """
     Tests CRL validation when the CA issuer has no keyUsage extension.
 
-    Per RFC 5280 Section 4.2.1.3, if the keyUsage extension is absent, there are
-    no restrictions on the key usage. A CRL signed by such a CA should be accepted.
+    Per RFC 5280 Section 6.3.3(f), the CRL validation algorithm states:
+    "If a key usage extension is present in the CRL issuer's certificate,
+    verify that the cRLSign bit is set." This conditional check means that
+    when keyUsage is absent, there is no cRLSign verification to perform.
+
+    Note: RFC 5280 Section 4.2.1.3 states that "Conforming CAs MUST include
+    this extension in certificates that contain public keys that are used to
+    validate digital signatures on other public key certificates or CRLs."
+    However, this is a certificate issuance requirement, not a validation
+    requirement. The validation algorithm in Section 6.3.3(f) explicitly uses
+    conditional language ("If... is present").
     """
     validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
 
