@@ -246,3 +246,136 @@ def crlnumber_critical(builder: Builder) -> None:
         .validation_time(leaf.cert.not_valid_before_utc + timedelta(seconds=2))
         .fails()
     )
+
+
+@testcase
+def revocation_date_future_1_day(builder: Builder) -> None:
+    """
+    Tests that a certificate with a revocation date 1 day in the future
+    is accepted during validation.
+
+    RFC 5280 does not explicitly define behavior for future revocation dates.
+    This test documents whether implementations treat future-dated revocations
+    as already revoked or as scheduled revocations that haven't taken effect.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca()
+
+    leaf = builder.leaf_cert(
+        parent=root,
+        subject=x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "future-revocation.example.com"),
+            ]
+        ),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("future-revocation.example.com")]),
+            critical=False,
+        ),
+    )
+
+    crl = builder.crl(
+        signer=root,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(leaf.cert.serial_number)
+            .revocation_date(validation_time + timedelta(days=1))
+            .build()
+        ],
+    )
+
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="future-revocation.example.com")
+    ).crls(crl).validation_time(validation_time).succeeds()
+
+
+@testcase
+def revocation_date_future_1_hour(builder: Builder) -> None:
+    """
+    Tests that a certificate with a revocation date 1 hour in the future
+    is accepted during validation.
+
+    This tests a smaller time window to explore edge cases in implementations
+    that may have different tolerances for "future" revocation dates.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca()
+
+    leaf = builder.leaf_cert(
+        parent=root,
+        subject=x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "future-revocation-1h.example.com"),
+            ]
+        ),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("future-revocation-1h.example.com")]),
+            critical=False,
+        ),
+    )
+
+    crl = builder.crl(
+        signer=root,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(leaf.cert.serial_number)
+            .revocation_date(validation_time + timedelta(hours=1))
+            .build()
+        ],
+    )
+
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="future-revocation-1h.example.com")
+    ).crls(crl).validation_time(validation_time).succeeds()
+
+
+@testcase
+def revocation_date_exact_validation_time(builder: Builder) -> None:
+    """
+    Tests that a certificate with a revocation date exactly at validation time
+    is rejected during validation.
+
+    This boundary case tests whether implementations consider a certificate
+    revoked when the revocation date equals the validation time.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca()
+
+    leaf = builder.leaf_cert(
+        parent=root,
+        subject=x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "exact-revocation.example.com"),
+            ]
+        ),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("exact-revocation.example.com")]),
+            critical=False,
+        ),
+    )
+
+    crl = builder.crl(
+        signer=root,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(leaf.cert.serial_number)
+            .revocation_date(validation_time)
+            .build()
+        ],
+    )
+
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="exact-revocation.example.com")
+    ).crls(crl).validation_time(validation_time).fails()
