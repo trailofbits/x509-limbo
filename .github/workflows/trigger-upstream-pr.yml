@@ -40,7 +40,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PR_DATA=$(gh pr view ${{ steps.pr.outputs.number }} --json title,body,headRefName,state,reviews,statusCheckRollup)
+          PR_DATA=$(gh pr view ${{ steps.pr.outputs.number }} --repo "$GITHUB_REPOSITORY" --json title,body,headRefName,state,reviews,statusCheckRollup)
 
           echo "title=$(echo "$PR_DATA" | jq -r '.title')" >> $GITHUB_OUTPUT
           echo "body=$(echo "$PR_DATA" | jq -r '.body')" >> $GITHUB_OUTPUT
@@ -198,7 +198,7 @@ UPSTREAMEOF
             exit 0
           fi
 
-          gh pr comment ${{ steps.pr.outputs.number }} --body "🚀 **Ready for Upstream Submission**
+          gh pr comment ${{ steps.pr.outputs.number }} --repo "$GITHUB_REPOSITORY" --body "🚀 **Ready for Upstream Submission**
 
 Branch \`${{ steps.upstream_branch.outputs.branch }}\` has been prepared and rebased on upstream/main.
 
@@ -217,4 +217,4 @@ Or use the GitHub web interface to create a PR from the branch.
 
 ⚠️ Automated PR creation requires additional permissions and configuration."
 
-          gh pr edit ${{ steps.pr.outputs.number }} --add-label "ready-for-upstream"
+          gh pr edit ${{ steps.pr.outputs.number }} --repo "$GITHUB_REPOSITORY" --add-label "ready-for-upstream"

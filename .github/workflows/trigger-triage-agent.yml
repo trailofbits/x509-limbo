@@ -48,12 +48,13 @@ jobs:
           else
             # Add labels
             gh issue edit "$ISSUE_NUMBER" \
+              --repo "$GITHUB_REPOSITORY" \
               --add-label "$TYPE" \
               --add-label "complexity:$COMPLEXITY" \
               --remove-label "needs-triage"
 
             # Add analysis comment
-            gh issue comment "$ISSUE_NUMBER" --body "## 🤖 Automated Triage
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "## 🤖 Automated Triage
 
 **Type:** $TYPE
 **Complexity:** $COMPLEXITY

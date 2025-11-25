@@ -40,7 +40,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ISSUE_DATA=$(gh issue view ${{ steps.issue.outputs.number }} --json title,body,labels)
+          ISSUE_DATA=$(gh issue view ${{ steps.issue.outputs.number }} --repo "$GITHUB_REPOSITORY" --json title,body,labels)
           echo "title=$(echo "$ISSUE_DATA" | jq -r '.title')" >> $GITHUB_OUTPUT
           echo "body=$(echo "$ISSUE_DATA" | jq -r '.body')" >> $GITHUB_OUTPUT
 
@@ -53,7 +53,7 @@ jobs:
             exit 0
           fi
 
-          gh issue comment ${{ steps.issue.outputs.number }} --body "🤖 **Agent Fix Started**
+          gh issue comment ${{ steps.issue.outputs.number }} --repo "$GITHUB_REPOSITORY" --body "🤖 **Agent Fix Started**
 
 I'm working on this issue. Will update with progress.
 
@@ -136,6 +136,8 @@ FIXEOF
           fi
 
           gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --head "$BRANCH_NAME" \
             --title "fix: ${{ steps.issue_details.outputs.title }} (#${{ steps.issue.outputs.number }})" \
             --body "## Description
 This PR was automatically created by the fix agent.
@@ -179,7 +181,7 @@ A human developer should:
           fi
 
           if [ "${{ job.status }}" == "success" ]; then
-            gh issue comment ${{ steps.issue.outputs.number }} --body "✅ **Agent Fix Complete**
+            gh issue comment ${{ steps.issue.outputs.number }} --repo "$GITHUB_REPOSITORY" --body "✅ **Agent Fix Complete**
 
 Created draft PR with branch \`${{ steps.fix.outputs.branch }}\`
 
@@ -187,13 +189,14 @@ Created draft PR with branch \`${{ steps.fix.outputs.branch }}\`
 
 To enable full AI-powered fixing, configure the gh-aw extension with Claude integration."
           else
-            gh issue comment ${{ steps.issue.outputs.number }} --body "❌ **Agent Fix Failed**
+            gh issue comment ${{ steps.issue.outputs.number }} --repo "$GITHUB_REPOSITORY" --body "❌ **Agent Fix Failed**
 
 The automated fix attempt encountered an error. A human developer should investigate.
 
 Please review the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
 
             gh issue edit ${{ steps.issue.outputs.number }} \
+              --repo "$GITHUB_REPOSITORY" \
               --remove-label "agent-fix" \
               --add-label "needs-human-review"
           fi
