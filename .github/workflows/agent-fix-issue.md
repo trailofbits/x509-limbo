@@ -4,6 +4,9 @@ on:
   issues:
     types: [labeled]
 
+# Only run when the 'agent-fix' label is added
+if: github.event.label.name == 'agent-fix'
+
 # Permissions - what can this workflow access?
 permissions:
   contents: write

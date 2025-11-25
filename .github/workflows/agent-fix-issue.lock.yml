@@ -512,7 +512,7 @@ run-name: "Agent: Fix Issue"
 jobs:
   activation:
     needs: pre_activation
-    if: needs.pre_activation.outputs.activated == 'true'
+    if: (needs.pre_activation.outputs.activated == 'true') && (github.event.label.name == 'agent-fix')
     runs-on: ubuntu-slim
     permissions:
       contents: read
@@ -6461,6 +6461,7 @@ jobs:
             });
 
   pre_activation:
+    if: github.event.label.name == 'agent-fix'
     runs-on: ubuntu-slim
     outputs:
       activated: ${{ steps.check_membership.outputs.is_team_member == 'true' }}
