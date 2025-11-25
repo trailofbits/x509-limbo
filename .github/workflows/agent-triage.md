@@ -34,6 +34,20 @@ Automatically runs when issues are labeled with "needs-triage"
 - Issue: The specific issue to triage
 - Upstream: Original issue from upstream repository
 
+## Getting the Issue Number
+
+**CRITICAL**: The issue number is provided in the GitHub Context section at the end of this prompt. Look for:
+- `Issue Number: #<number>`
+
+If the issue number is provided, use the `mcp__github__issue_read` tool to fetch the full issue details:
+```
+mcp__github__issue_read with owner="trailofbits", repo="x509-limbo", issue_number=<number>
+```
+
+If no issue number is provided in the context, use `mcp__github__list_issues` to find issues with the `needs-triage` label and process the most recent one.
+
+**You MUST read the issue using MCP tools before proceeding with analysis.**
+
 ## Objective
 Analyze the **currently triggered issue** and determine:
 1. Type of issue (bug, feature, enhancement, documentation, etc.)

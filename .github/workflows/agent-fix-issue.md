@@ -63,6 +63,20 @@ Before starting, verify:
 - Testing: Uses `make lint` for linting, `make test` for harness tests
 - Build: Uses `make build-harnesses` for building test harnesses
 
+## Getting the Issue Number
+
+**CRITICAL**: The issue number is provided in the GitHub Context section at the end of this prompt. Look for:
+- `Issue Number: #<number>`
+
+If the issue number is provided, use the `mcp__github__issue_read` tool to fetch the full issue details:
+```
+mcp__github__issue_read with owner="trailofbits", repo="x509-limbo", issue_number=<number>
+```
+
+If no issue number is provided in the context, use `mcp__github__list_issues` to find issues with the `agent-fix` label and process the most recent one.
+
+**You MUST read the issue using MCP tools before proceeding with the fix.**
+
 ## Objective
 Analyze the issue, implement a fix, test it thoroughly, and create a pull request in the fork repository ready for human review.
 
