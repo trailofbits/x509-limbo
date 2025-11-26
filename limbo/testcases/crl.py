@@ -5,7 +5,6 @@ CRL (Certificate Revocation List) tests.
 from datetime import datetime, timedelta
 
 from cryptography import x509
-from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from .. import models
@@ -265,26 +264,24 @@ def similar_certs_different_serials(builder: Builder) -> None:
 
     root = builder.root_ca()
 
-    # Generate a shared key for both certificates
-    shared_key = ec.generate_private_key(ec.SECP256R1())
     shared_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "similar.example.com")])
 
     # Certificate A: serial 1000 (will be revoked)
-    # We create this but don't use it for validation - just need its serial for CRL
-    _cert_a = builder.leaf_cert(
+    # We create this first to generate a key, then reuse that key for cert B
+    cert_a = builder.leaf_cert(
         parent=root,
         serial=1000,
-        key=shared_key,
         subject=shared_subject,
         eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
         san=ext(x509.SubjectAlternativeName([x509.DNSName("similar.example.com")]), critical=False),
     )
 
     # Certificate B: serial 2000 (NOT revoked) - this is the one we validate
+    # Reuse the key from cert_a so both certificates have identical keys
     cert_b = builder.leaf_cert(
         parent=root,
         serial=2000,
-        key=shared_key,
+        key=cert_a.key,
         subject=shared_subject,
         eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
         san=ext(x509.SubjectAlternativeName([x509.DNSName("similar.example.com")]), critical=False),
@@ -324,17 +321,15 @@ def similar_certs_different_serials_revoked(builder: Builder) -> None:
 
     root = builder.root_ca()
 
-    # Generate a shared key for both certificates
-    shared_key = ec.generate_private_key(ec.SECP256R1())
     shared_subject = x509.Name(
         [x509.NameAttribute(NameOID.COMMON_NAME, "similar-revoked.example.com")]
     )
 
     # Certificate A: serial 1000 (will be revoked) - this is the one we validate
+    # We create this first to generate a key, then reuse that key for cert B
     cert_a = builder.leaf_cert(
         parent=root,
         serial=1000,
-        key=shared_key,
         subject=shared_subject,
         eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
         san=ext(
@@ -345,10 +340,11 @@ def similar_certs_different_serials_revoked(builder: Builder) -> None:
 
     # Certificate B: serial 2000 (NOT revoked)
     # We create this to demonstrate both exist but only one is revoked
+    # Reuse the key from cert_a so both certificates have identical keys
     _cert_b = builder.leaf_cert(
         parent=root,
         serial=2000,
-        key=shared_key,
+        key=cert_a.key,
         subject=shared_subject,
         eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
         san=ext(
