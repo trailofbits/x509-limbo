@@ -246,3 +246,208 @@ def crlnumber_critical(builder: Builder) -> None:
         .validation_time(leaf.cert.not_valid_before_utc + timedelta(seconds=2))
         .fails()
     )
+
+
+@testcase
+def leaf_with_cdp_extension(builder: Builder) -> None:
+    """
+    Tests a leaf certificate with a CRL Distribution Points (CDP) extension.
+
+    This test verifies basic CDP extension handling. The leaf certificate includes
+    a CDP extension pointing to a CRL distribution point (as a URI), and the
+    certificate should be accepted as valid when the CRL shows no revocation.
+
+    This tests RFC 5280 Section 4.2.1.13 (CRL Distribution Points extension).
+    """
+
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca()
+
+    # Create CDP extension with a distribution point
+    cdp = ext(
+        x509.CRLDistributionPoints(
+            [
+                x509.DistributionPoint(
+                    full_name=[x509.UniformResourceIdentifier("http://example.com/root.crl")],
+                    relative_name=None,
+                    reasons=None,
+                    crl_issuer=None,
+                )
+            ]
+        ),
+        critical=False,
+    )
+
+    leaf = builder.leaf_cert(
+        parent=root,
+        subject=x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "cdp.example.com"),
+            ]
+        ),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(x509.SubjectAlternativeName([x509.DNSName("cdp.example.com")]), critical=False),
+        extra_extension=cdp,
+    )
+
+    crl = builder.crl(
+        signer=root,
+        revoked=[],
+    )
+
+    builder.features([Feature.has_crl]).importance(
+        Importance.MEDIUM
+    ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="cdp.example.com")
+    ).crls(crl).validation_time(validation_time).succeeds()
+
+
+@testcase
+def cdp_with_indirect_crl_issuer(builder: Builder) -> None:
+    """
+    Tests CDP extension with cRLIssuer field authorizing an indirect CRL.
+
+    Per RFC 5280 Section 6.3.3 step (b)(2), when a CDP extension includes
+    a cRLIssuer field, the CRL issuer does not need to match the certificate
+    issuer. This test verifies that an indirect CRL (issued by a different CA)
+    is accepted when authorized via the cRLIssuer field in the CDP extension.
+    """
+
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    # Create two separate CAs
+    cert_issuer = builder.root_ca(
+        issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Certificate Issuer CA")]),
+    )
+
+    crl_issuer = builder.root_ca(
+        issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "CRL Issuer CA")]),
+    )
+
+    # Create CDP extension with cRLIssuer pointing to the different CRL issuer
+    cdp = ext(
+        x509.CRLDistributionPoints(
+            [
+                x509.DistributionPoint(
+                    full_name=[x509.UniformResourceIdentifier("http://example.com/indirect.crl")],
+                    relative_name=None,
+                    reasons=None,
+                    crl_issuer=[x509.DirectoryName(crl_issuer.cert.subject)],
+                )
+            ]
+        ),
+        critical=False,
+    )
+
+    leaf = builder.leaf_cert(
+        parent=cert_issuer,
+        subject=x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "indirect-crl.example.com"),
+            ]
+        ),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("indirect-crl.example.com")]),
+            critical=False,
+        ),
+        extra_extension=cdp,
+    )
+
+    # Create CRL from the CRL issuer (not the cert issuer)
+    crl = builder.crl(
+        signer=crl_issuer,
+        revoked=[],
+    )
+
+    builder.features([Feature.has_crl]).importance(
+        Importance.MEDIUM
+    ).server_validation().trusted_certs(cert_issuer, crl_issuer).peer_certificate(
+        leaf
+    ).expected_peer_name(models.PeerName(kind=PeerKind.DNS, value="indirect-crl.example.com")).crls(
+        crl
+    ).validation_time(validation_time).succeeds()
+
+
+@testcase
+def cdp_without_crl_issuer_rejects_indirect_crl(builder: Builder) -> None:
+    """
+    Tests that CDP without cRLIssuer requires direct issuer matching.
+
+    Per RFC 5280 Section 6.3.3 step (b)(1), when a CDP extension does NOT
+    include a cRLIssuer field, the CRL issuer MUST match the certificate issuer.
+    This test verifies that an indirect CRL (from a different issuer) is rejected
+    when the CDP does not authorize it via cRLIssuer.
+    """
+
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    # Create two separate CAs
+    cert_issuer = builder.root_ca(
+        issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Certificate Issuer CA")]),
+    )
+
+    wrong_crl_issuer = builder.root_ca(
+        issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Wrong CRL Issuer CA")]),
+    )
+
+    # Create CDP extension WITHOUT cRLIssuer (only has distribution point URI)
+    cdp = ext(
+        x509.CRLDistributionPoints(
+            [
+                x509.DistributionPoint(
+                    full_name=[x509.UniformResourceIdentifier("http://example.com/direct.crl")],
+                    relative_name=None,
+                    reasons=None,
+                    crl_issuer=None,  # No cRLIssuer - requires direct matching
+                )
+            ]
+        ),
+        critical=False,
+    )
+
+    leaf = builder.leaf_cert(
+        parent=cert_issuer,
+        subject=x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "direct-only.example.com"),
+            ]
+        ),
+        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
+        san=ext(
+            x509.SubjectAlternativeName([x509.DNSName("direct-only.example.com")]),
+            critical=False,
+        ),
+        extra_extension=cdp,
+    )
+
+    # Provide the correct CRL from cert_issuer
+    correct_crl = builder.crl(
+        signer=cert_issuer,
+        revoked=[],
+    )
+
+    # Also provide a CRL from wrong issuer (should be ignored)
+    wrong_crl = builder.crl(
+        signer=wrong_crl_issuer,
+        revoked=[
+            # Try to revoke the leaf certificate
+            x509.RevokedCertificateBuilder()
+            .serial_number(leaf.cert.serial_number)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    # The certificate should succeed because:
+    # 1. CDP doesn't have cRLIssuer, so only cert_issuer's CRL applies
+    # 2. cert_issuer's CRL doesn't revoke the certificate
+    # 3. wrong_crl_issuer's CRL should be ignored (issuer mismatch)
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(cert_issuer, wrong_crl_issuer).peer_certificate(
+        leaf
+    ).expected_peer_name(models.PeerName(kind=PeerKind.DNS, value="direct-only.example.com")).crls(
+        correct_crl, wrong_crl
+    ).validation_time(validation_time).succeeds()
