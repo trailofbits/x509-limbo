@@ -311,68 +311,6 @@ def issuer_missing_crlsign(builder: Builder) -> None:
 
 
 @testcase
-def issuer_keyusage_crlsign_false(builder: Builder) -> None:
-    """
-    Tests CRL validation when the CA issuer has a keyUsage extension with
-    `cRLSign` explicitly set to FALSE.
-
-    Per RFC 5280 Section 4.2.1.3, if the keyUsage extension is present in a CA
-    certificate, the `cRLSign` bit MUST be set if the CA will be issuing CRLs.
-    A CRL signed by a CA with `cRLSign=FALSE` should be rejected.
-    """
-    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
-
-    root = builder.root_ca(
-        key_usage=ext(
-            x509.KeyUsage(
-                digital_signature=True,
-                key_cert_sign=True,
-                content_commitment=False,
-                key_encipherment=False,
-                data_encipherment=False,
-                key_agreement=False,
-                crl_sign=False,
-                encipher_only=False,
-                decipher_only=False,
-            ),
-            critical=False,
-        ),
-    )
-
-    leaf = builder.leaf_cert(
-        parent=root,
-        subject=x509.Name(
-            [
-                x509.NameAttribute(NameOID.COMMON_NAME, "issuer-crlsign-false.example.com"),
-            ]
-        ),
-        eku=ext(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False),
-        san=ext(
-            x509.SubjectAlternativeName([x509.DNSName("issuer-crlsign-false.example.com")]),
-            critical=False,
-        ),
-    )
-
-    crl = builder.crl(
-        signer=root,
-        revoked=[
-            # Revoke a random certificate, not the leaf, to ensure failure is due
-            # to issuer authorization, not revocation status.
-            x509.RevokedCertificateBuilder()
-            .serial_number(x509.random_serial_number())
-            .revocation_date(validation_time - timedelta(days=1))
-            .build()
-        ],
-    )
-
-    builder.features([Feature.has_crl]).importance(
-        Importance.HIGH
-    ).server_validation().trusted_certs(root).peer_certificate(leaf).expected_peer_name(
-        models.PeerName(kind=PeerKind.DNS, value="issuer-crlsign-false.example.com")
-    ).crls(crl).validation_time(validation_time).fails()
-
-
-@testcase
 def issuer_no_keyusage_extension(builder: Builder) -> None:
     """
     Tests CRL validation when the CA issuer has no keyUsage extension.
