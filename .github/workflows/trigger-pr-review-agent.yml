@@ -1,0 +1,31 @@
+name: Trigger PR Review Agent
+
+on:
+  # Triggered by review comments on PRs
+  pull_request_review_comment:
+    types: [created]
+
+  # Triggered by regular comments on PRs
+  issue_comment:
+    types: [created]
+
+jobs:
+  # On comment events mentioning @claude on a PR, hand off to gh-aw agent
+  on-claude-mention:
+    # Only run if:
+    # 1. It's a PR review comment OR an issue comment on a PR
+    # 2. The comment mentions @claude
+    if: |
+      (github.event_name == 'pull_request_review_comment' ||
+       (github.event_name == 'issue_comment' && github.event.issue.pull_request != null)) &&
+      contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Note agentic workflow handoff
+        run: |
+          echo "🤖 @claude mention detected in PR comment"
+          echo "PR: ${{ github.event.pull_request.number || github.event.issue.number }}"
+          echo "Comment author: ${{ github.event.comment.user.login }}"
+          echo "gh-aw agent-pr-review workflow will process this comment."
