@@ -246,3 +246,178 @@ def crlnumber_critical(builder: Builder) -> None:
         .validation_time(leaf.cert.not_valid_before_utc + timedelta(seconds=2))
         .fails()
     )
+
+
+@testcase
+def issuer_mismatch_root_vs_intermediate(builder: Builder) -> None:
+    """
+    Tests that a CRL issued by a root CA does not apply to certificates
+    issued by an intermediate CA, even if the CRL lists the certificate's serial.
+
+    Per RFC 5280 Section 6.3.3, the CRL issuer must match the certificate issuer.
+    A CRL from the root CA should not affect certificates issued by intermediates.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca(issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Root CA")]))
+
+    intermediate = builder.intermediate_ca(
+        parent=root,
+        subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Intermediate CA")]),
+        pathlen=0,
+        key_usage=ext(
+            x509.KeyUsage(
+                digital_signature=False,
+                key_cert_sign=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=False,
+        ),
+    )
+
+    leaf = builder.leaf_cert(parent=intermediate)
+
+    # CRL from root CA listing the leaf's serial - should not apply
+    crl_from_root = builder.crl(
+        signer=root,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(leaf.cert.serial_number)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    # Also provide a valid (empty) CRL from the intermediate
+    crl_from_intermediate = builder.crl(signer=intermediate, revoked=[])
+
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).untrusted_intermediates(
+        intermediate
+    ).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="example.com")
+    ).crls(crl_from_root, crl_from_intermediate).validation_time(validation_time).succeeds()
+
+
+@testcase
+def crl_issuer_name_signature_mismatch(builder: Builder) -> None:
+    """
+    Tests that a CRL with an issuer name that doesn't match the signer is rejected.
+
+    The CRL is signed by the root CA but claims a different issuer name.
+    Per RFC 5280, the CRL issuer name must match the certificate issuer,
+    and the CRL signature must be verifiable by that issuer's key.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca(issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Root CA")]))
+    leaf = builder.leaf_cert(parent=root)
+
+    # CRL signed by root but with mismatched issuer name
+    crl = builder.crl(
+        signer=root,
+        issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Fake Issuer")]),
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(leaf.cert.serial_number)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    builder.features([Feature.has_crl]).server_validation().trusted_certs(root).peer_certificate(
+        leaf
+    ).expected_peer_name(models.PeerName(kind=PeerKind.DNS, value="example.com")).crls(
+        crl
+    ).validation_time(validation_time).fails()
+
+
+@testcase
+def issuer_mismatch_sibling_intermediates(builder: Builder) -> None:
+    """
+    Tests that a CRL from one intermediate CA does not apply to certificates
+    issued by a sibling intermediate CA under the same root.
+
+    Creates a certificate chain with two intermediate CAs under the same root.
+    One intermediate issues the leaf certificate, while the other issues a CRL
+    revoking the leaf's serial number. Per RFC 5280 Section 6.3.3, the CRL
+    issuer must match the certificate issuer, so the CRL from the sibling
+    intermediate should not affect the leaf certificate's validity.
+    """
+    validation_time = datetime.fromisoformat("2024-01-01T00:00:00Z")
+
+    root = builder.root_ca(issuer=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Root CA")]))
+
+    # First intermediate CA - issues the leaf certificate
+    intermediate_a = builder.intermediate_ca(
+        parent=root,
+        subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Intermediate CA A")]),
+        pathlen=0,
+        key_usage=ext(
+            x509.KeyUsage(
+                digital_signature=False,
+                key_cert_sign=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=False,
+        ),
+    )
+
+    # Second intermediate CA - issues the CRL
+    intermediate_b = builder.intermediate_ca(
+        parent=root,
+        subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Intermediate CA B")]),
+        pathlen=0,
+        key_usage=ext(
+            x509.KeyUsage(
+                digital_signature=False,
+                key_cert_sign=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=False,
+        ),
+    )
+
+    # Leaf certificate issued by intermediate_a
+    leaf = builder.leaf_cert(parent=intermediate_a)
+
+    # CRL from intermediate_b attempting to revoke the leaf - should not apply
+    crl_from_b = builder.crl(
+        signer=intermediate_b,
+        revoked=[
+            x509.RevokedCertificateBuilder()
+            .serial_number(leaf.cert.serial_number)
+            .revocation_date(validation_time - timedelta(days=1))
+            .build()
+        ],
+    )
+
+    # Valid (empty) CRL from intermediate_a, the actual issuer
+    crl_from_a = builder.crl(signer=intermediate_a, revoked=[])
+
+    builder.features([Feature.has_crl]).importance(
+        Importance.HIGH
+    ).server_validation().trusted_certs(root).untrusted_intermediates(
+        intermediate_a, intermediate_b
+    ).peer_certificate(leaf).expected_peer_name(
+        models.PeerName(kind=PeerKind.DNS, value="example.com")
+    ).crls(crl_from_a, crl_from_b).validation_time(validation_time).succeeds()
