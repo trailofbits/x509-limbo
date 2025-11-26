@@ -346,17 +346,18 @@ class Builder:
         if extra_extension is not None:
             builder = builder.add_extension(extra_extension.ext, extra_extension.critical)
 
-        if extra_unchecked_extensions is not None:
-            # NOTE: Add extension manually to bypass validation.
-            for e in extra_unchecked_extensions:
-                builder._extensions.append(x509.Extension(e.ext.oid, e.critical, e.ext))
-
         if unchecked_version is not None:
             builder._version = unchecked_version
 
             if unchecked_version == x509.Version.v1 and no_extensions:
                 # Undo everything above if we're explicitly requesting a v1 cert.
                 builder._extensions = []
+
+        if extra_unchecked_extensions is not None:
+            # NOTE: Add extension manually to bypass validation.
+            # This must come after the no_extensions clearing so unchecked extensions survive.
+            for e in extra_unchecked_extensions:
+                builder._extensions.append(x509.Extension(e.ext.oid, e.critical, e.ext))
 
         certificate = builder.sign(
             private_key=parent.key,
