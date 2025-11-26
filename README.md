@@ -22,6 +22,16 @@ To use it, you'll need to understand (and use) two pieces:
 
 The schema will tell you how to consume the combined testcase suite.
 
+### Downloading the Test Suite
+
+Due to the large size of `limbo.json` (39MB+), we recommend downloading it from
+the [latest release](https://github.com/C2SP/x509-limbo/releases/latest) rather
+than cloning the entire repository. Each release includes:
+
+- `limbo.json` - The complete test suite
+- `limbo-schema.json` - The JSON schema for the test suite
+- Python package wheels for easy installation
+
 ## Developing
 
 This repository contains a self-managing tool called `limbo`.
@@ -47,6 +57,22 @@ the schema and test suite:
 make limbo-schema.json
 make limbo.json
 ```
+
+## Releasing
+
+To create a new release:
+
+1. Update the version in `limbo/__init__.py`
+2. Commit the version bump: `git commit -am "Bump version to X.Y.Z"`
+3. Create and push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+4. The GitHub Actions workflow will automatically:
+   - Build the Python package
+   - Generate `limbo.json`
+   - Create a GitHub release with all assets
+   - Publish to PyPI (if `PYPI_TOKEN` secret is configured)
+
+The release will include `limbo.json` and `limbo-schema.json` as downloadable
+assets, avoiding the need to keep the large `limbo.json` file in the repository.
 
 ## Licensing
 
