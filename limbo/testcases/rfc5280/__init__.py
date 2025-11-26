@@ -652,3 +652,227 @@ def root_and_intermediate_swapped(builder: Builder) -> None:
         .expected_peer_name(PeerName(kind="DNS", value="example.com"))
         .succeeds()
     )
+
+
+@testcase
+def v1_cert_without_extensions(builder: Builder) -> None:
+    """
+    Produces the following **valid** chain:
+
+    ```
+    root -> EE (v1 with no extensions)
+    ```
+
+    The EE certificate is a v1 certificate without any extensions.
+    According to RFC 5280 Section 4.1.2.1, v1 certificates are valid
+    as long as they do not contain extensions.
+
+    This chain should be accepted as valid.
+    """
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        unchecked_version=x509.Version.v1,
+        no_extensions=True,
+    )
+
+    builder = builder.server_validation()
+    builder = builder.trusted_certs(root).peer_certificate(leaf).succeeds()
+
+
+@testcase
+def v1_cert_with_subject_key_identifier(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE (v1 with SubjectKeyIdentifier extension)
+    ```
+
+    The EE certificate is a v1 certificate that contains the SubjectKeyIdentifier
+    extension, which violates RFC 5280 Section 4.1.2.1:
+
+    > When extensions are used, as expected in this profile, version MUST be 3 (value is 2).
+
+    This chain should be rejected as invalid.
+    """
+    root = builder.root_ca()
+    # Create a v1 cert with no_extensions=True, then add only SubjectKeyIdentifier
+    leaf = builder.leaf_cert(
+        root,
+        unchecked_version=x509.Version.v1,
+        no_extensions=True,
+        extra_unchecked_extensions=[
+            ext(
+                x509.SubjectKeyIdentifier.from_public_key(
+                    root.key.public_key()  # placeholder; will use leaf's actual key
+                ),
+                critical=False,
+            ),
+        ],
+    )
+
+    builder = builder.server_validation()
+    builder = builder.trusted_certs(root).peer_certificate(leaf).fails()
+
+
+@testcase
+def v1_cert_with_basic_constraints(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE (v1 with BasicConstraints extension)
+    ```
+
+    The EE certificate is a v1 certificate that contains the BasicConstraints
+    extension, which violates RFC 5280 Section 4.1.2.1.
+
+    This chain should be rejected as invalid.
+    """
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        unchecked_version=x509.Version.v1,
+        no_extensions=True,
+        extra_unchecked_extensions=[
+            ext(x509.BasicConstraints(ca=False, path_length=None), critical=False),
+        ],
+    )
+
+    builder = builder.server_validation()
+    builder = builder.trusted_certs(root).peer_certificate(leaf).fails()
+
+
+@testcase
+def v1_cert_with_key_usage(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE (v1 with KeyUsage extension)
+    ```
+
+    The EE certificate is a v1 certificate that contains the KeyUsage extension,
+    which violates RFC 5280 Section 4.1.2.1.
+
+    This chain should be rejected as invalid.
+    """
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        unchecked_version=x509.Version.v1,
+        no_extensions=True,
+        extra_unchecked_extensions=[
+            ext(
+                x509.KeyUsage(
+                    digital_signature=True,
+                    content_commitment=False,
+                    key_encipherment=False,
+                    data_encipherment=False,
+                    key_agreement=False,
+                    key_cert_sign=False,
+                    crl_sign=False,
+                    encipher_only=False,
+                    decipher_only=False,
+                ),
+                critical=False,
+            ),
+        ],
+    )
+
+    builder = builder.server_validation()
+    builder = builder.trusted_certs(root).peer_certificate(leaf).fails()
+
+
+@testcase
+def v1_cert_with_extended_key_usage(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE (v1 with ExtendedKeyUsage extension)
+    ```
+
+    The EE certificate is a v1 certificate that contains the ExtendedKeyUsage
+    extension, which violates RFC 5280 Section 4.1.2.1.
+
+    This chain should be rejected as invalid.
+    """
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        unchecked_version=x509.Version.v1,
+        no_extensions=True,
+        extra_unchecked_extensions=[
+            ext(
+                x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]),
+                critical=False,
+            ),
+        ],
+    )
+
+    builder = builder.server_validation()
+    builder = builder.trusted_certs(root).peer_certificate(leaf).fails()
+
+
+@testcase
+def v1_cert_with_subject_alternative_name(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE (v1 with SubjectAlternativeName extension)
+    ```
+
+    The EE certificate is a v1 certificate that contains the SubjectAlternativeName
+    extension, which violates RFC 5280 Section 4.1.2.1.
+
+    This chain should be rejected as invalid.
+    """
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        unchecked_version=x509.Version.v1,
+        no_extensions=True,
+        extra_unchecked_extensions=[
+            ext(
+                x509.SubjectAlternativeName([x509.DNSName("example.com")]),
+                critical=False,
+            ),
+        ],
+    )
+
+    builder = builder.server_validation()
+    builder = builder.trusted_certs(root).peer_certificate(leaf).fails()
+
+
+@testcase
+def v1_cert_with_authority_key_identifier(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> EE (v1 with AuthorityKeyIdentifier extension)
+    ```
+
+    The EE certificate is a v1 certificate that contains the AuthorityKeyIdentifier
+    extension, which violates RFC 5280 Section 4.1.2.1.
+
+    This chain should be rejected as invalid.
+    """
+    root = builder.root_ca()
+    leaf = builder.leaf_cert(
+        root,
+        unchecked_version=x509.Version.v1,
+        no_extensions=True,
+        extra_unchecked_extensions=[
+            ext(
+                x509.AuthorityKeyIdentifier.from_issuer_public_key(root.key.public_key()),
+                critical=False,
+            ),
+        ],
+    )
+
+    builder = builder.server_validation()
+    builder = builder.trusted_certs(root).peer_certificate(leaf).fails()
