@@ -317,3 +317,179 @@ def notafter_fractional(builder: Builder) -> None:
         .validation_time(not_after + timedelta(milliseconds=5))
         .succeeds()
     )
+
+
+@testcase
+def expired_1_second(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> ICA -> EE
+    ```
+
+    The EE certificate expires at `2024-04-01T00:00:00Z`, and the chain is
+    validated at `2024-04-01T00:00:01Z`, i.e. exactly 1 second after expiration.
+
+    Per RFC 5280 4.1.2.5, the validity period is inclusive of both `notBefore`
+    and `notAfter`. However, any time strictly after `notAfter` should result
+    in validation failure. This test ensures implementations strictly reject
+    certificates that have expired, even by a single second.
+    """
+
+    not_before = datetime.fromisoformat("2024-03-01T00:00:00Z")
+    not_after = datetime.fromisoformat("2024-04-01T00:00:00Z")
+
+    root = builder.root_ca(not_before=not_before, not_after=not_after)
+    ica = builder.intermediate_ca(root, not_before=not_before, not_after=not_after)
+    leaf = builder.leaf_cert(ica, not_before=not_before, not_after=not_after)
+
+    builder = (
+        builder.server_validation()
+        .importance(Importance.CRITICAL)
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .validation_time(not_after + timedelta(seconds=1))
+        .fails()
+    )
+
+
+@testcase
+def expired_5_seconds(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> ICA -> EE
+    ```
+
+    The EE certificate expires at `2024-04-01T00:00:00Z`, and the chain is
+    validated at `2024-04-01T00:00:05Z`, i.e. 5 seconds after expiration.
+
+    This test ensures implementations strictly reject certificates that have
+    expired by a small number of seconds.
+    """
+
+    not_before = datetime.fromisoformat("2024-03-01T00:00:00Z")
+    not_after = datetime.fromisoformat("2024-04-01T00:00:00Z")
+
+    root = builder.root_ca(not_before=not_before, not_after=not_after)
+    ica = builder.intermediate_ca(root, not_before=not_before, not_after=not_after)
+    leaf = builder.leaf_cert(ica, not_before=not_before, not_after=not_after)
+
+    builder = (
+        builder.server_validation()
+        .importance(Importance.CRITICAL)
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .validation_time(not_after + timedelta(seconds=5))
+        .fails()
+    )
+
+
+@testcase
+def expired_1_minute(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> ICA -> EE
+    ```
+
+    The EE certificate expires at `2024-04-01T00:00:00Z`, and the chain is
+    validated at `2024-04-01T00:01:00Z`, i.e. 1 minute after expiration.
+
+    This test ensures implementations strictly reject certificates that have
+    expired by a small amount of time (sub-minute boundaries).
+    """
+
+    not_before = datetime.fromisoformat("2024-03-01T00:00:00Z")
+    not_after = datetime.fromisoformat("2024-04-01T00:00:00Z")
+
+    root = builder.root_ca(not_before=not_before, not_after=not_after)
+    ica = builder.intermediate_ca(root, not_before=not_before, not_after=not_after)
+    leaf = builder.leaf_cert(ica, not_before=not_before, not_after=not_after)
+
+    builder = (
+        builder.server_validation()
+        .importance(Importance.CRITICAL)
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .validation_time(not_after + timedelta(minutes=1))
+        .fails()
+    )
+
+
+@testcase
+def not_yet_valid_1_second(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> ICA -> EE
+    ```
+
+    The EE certificate becomes valid at `2024-03-01T00:00:01Z`, and the chain
+    is validated at `2024-03-01T00:00:00Z`, i.e. 1 second before the certificate
+    becomes valid.
+
+    Per RFC 5280 4.1.2.5, the validity period is inclusive of `notBefore`.
+    However, any time strictly before `notBefore` should result in validation
+    failure. This test ensures implementations strictly reject certificates
+    that are not yet valid, even by a single second.
+    """
+
+    not_before = datetime.fromisoformat("2024-03-01T00:00:01Z")
+    not_after = datetime.fromisoformat("2024-04-01T00:00:00Z")
+
+    root = builder.root_ca(not_before=not_before, not_after=not_after)
+    ica = builder.intermediate_ca(root, not_before=not_before, not_after=not_after)
+    leaf = builder.leaf_cert(ica, not_before=not_before, not_after=not_after)
+
+    builder = (
+        builder.server_validation()
+        .importance(Importance.CRITICAL)
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .validation_time(not_before - timedelta(seconds=1))
+        .fails()
+    )
+
+
+@testcase
+def not_yet_valid_5_seconds(builder: Builder) -> None:
+    """
+    Produces the following **invalid** chain:
+
+    ```
+    root -> ICA -> EE
+    ```
+
+    The EE certificate becomes valid at `2024-03-01T00:00:05Z`, and the chain
+    is validated at `2024-03-01T00:00:00Z`, i.e. 5 seconds before the certificate
+    becomes valid.
+
+    This test ensures implementations strictly reject certificates that are
+    not yet valid by a small number of seconds.
+    """
+
+    not_before = datetime.fromisoformat("2024-03-01T00:00:05Z")
+    not_after = datetime.fromisoformat("2024-04-01T00:00:00Z")
+
+    root = builder.root_ca(not_before=not_before, not_after=not_after)
+    ica = builder.intermediate_ca(root, not_before=not_before, not_after=not_after)
+    leaf = builder.leaf_cert(ica, not_before=not_before, not_after=not_after)
+
+    builder = (
+        builder.server_validation()
+        .importance(Importance.CRITICAL)
+        .trusted_certs(root)
+        .untrusted_intermediates(ica)
+        .peer_certificate(leaf)
+        .validation_time(not_before - timedelta(seconds=5))
+        .fails()
+    )
